@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+
+# Generated detection results
+output/*
+!output/.gitkeep
+runs/detect/predict*/
