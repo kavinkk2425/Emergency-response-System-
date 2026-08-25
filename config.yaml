@@ -5,7 +5,7 @@
 # Model Configuration
 model:
   weights: "runs/detect/train/weights/best.pt"
-  confidence_threshold: 0.25
+  confidence_threshold: 0.15
   input_size: 640
   device: "cpu"  # 'cpu' or 'cuda' or '0' for GPU
 

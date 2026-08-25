@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 class Visualizer:
+
     """Handle all visualization and alert tasks"""
     
     def __init__(self, config):

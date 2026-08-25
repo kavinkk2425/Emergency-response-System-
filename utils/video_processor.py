@@ -51,7 +51,11 @@ class VideoProcessor:
         # Determine source type
         if isinstance(source, int):
             # Webcam
-            self.cap = cv2.VideoCapture(source)
+            # DirectShow is more reliable than MSMF for webcam capture on Windows.
+            self.cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
+            if not self.cap.isOpened():
+                self.cap.release()
+                self.cap = cv2.VideoCapture(source)
             source_type = f"Webcam (Device {source})"
         elif isinstance(source, str):
             # File or IP camera
@@ -68,6 +72,10 @@ class VideoProcessor:
         if not self.cap.isOpened():
             print(f"❌ Failed to open source: {source}")
             return False
+
+        # Keep live sources close to real time instead of processing stale frames.
+        if isinstance(source, int) or (isinstance(source, str) and source.startswith("rtsp://")):
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
         print(f"✓ Connected to {source_type}")
         
