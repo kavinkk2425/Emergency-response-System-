@@ -19,7 +19,7 @@ import yaml
 import argparse
 import time
 from pathlib import Path
-from utils import VideoProcessor, AccidentDetector, Visualizer
+from utils import VideoProcessor, AccidentDetector, Visualizer, EmergencyClient
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -42,6 +42,7 @@ class LiveDetectionSystem:
         self.visualizer = Visualizer(self.config)
         self.detector = AccidentDetector(self.config, self.visualizer)
         self.processor = VideoProcessor(self.config)
+        self.emergency_client = EmergencyClient(self.config)
         
         # Control flags
         self.running = True
@@ -235,11 +236,14 @@ class LiveDetectionSystem:
                 
                 # Display frame
                 self.visualizer.display_frame(drawn_frame)
-                
                 # Handle accidents
                 if len(smoothed_detections) > 0:
                     for detection in smoothed_detections:
                         self.visualizer.save_frame(frame, detection)
+                    
+                    # Send real-time emergency alert message to Hospital Dashboard
+                    max_conf = max(d["confidence"] for d in smoothed_detections)
+                    self.emergency_client.send_alert(frame, smoothed_detections, confidence=max_conf)
             
             # Handle keyboard input
             key = cv2.waitKey(1) & 0xFF

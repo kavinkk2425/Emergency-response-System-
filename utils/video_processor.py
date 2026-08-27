@@ -36,7 +36,7 @@ class VideoProcessor:
         Args:
             source: Video source (0=webcam, 'file.mp4', 'rtsp://...')
                    If None, uses config value
-                   
+                    
         Returns:
             bool: Success status
         """
@@ -50,36 +50,25 @@ class VideoProcessor:
         
         # Determine source type
         if isinstance(source, int):
-            # Webcam
-            # DirectShow is more reliable than MSMF for webcam capture on Windows.
-            self.cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
-            if not self.cap.isOpened():
-                self.cap.release()
-                self.cap = cv2.VideoCapture(source)
+            self.cap = self._open_webcam(source)
             source_type = f"Webcam (Device {source})"
         elif isinstance(source, str):
-            # File or IP camera
-            self.cap = cv2.VideoCapture(source)
-            if source.startswith("rtsp://"):
-                source_type = "IP Camera Stream"
-            else:
-                source_type = f"Video File: {Path(source).name}"
+            self.cap = self._open_video_file(source)
+            source_type = f"Video File: {Path(source).name}"
         else:
             print("❌ Invalid source type")
             return False
         
-        # Check if opened successfully
-        if not self.cap.isOpened():
+        if not self.cap or not self.cap.isOpened():
             print(f"❌ Failed to open source: {source}")
+            self._print_troubleshooting(source)
             return False
 
-        # Keep live sources close to real time instead of processing stale frames.
         if isinstance(source, int) or (isinstance(source, str) and source.startswith("rtsp://")):
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
         print(f"✓ Connected to {source_type}")
         
-        # Get video properties
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -91,6 +80,70 @@ class VideoProcessor:
             print(f"  Total Frames: {self.total_frames}")
         
         return True
+    
+    def _open_webcam(self, source):
+        """Open webcam with fallback backends"""
+        cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap.release()
+            cap = cv2.VideoCapture(source, cv2.CAP_MSMF)
+        if not cap.isOpened():
+            cap.release()
+            cap = cv2.VideoCapture(source)
+        return cap
+    
+    def _open_video_file(self, source):
+        """Open video file with existence check and backend fallbacks"""
+        source_path = Path(source)
+        
+        if not source_path.exists():
+            print(f"❌ File not found: {source_path.resolve()}")
+            return None
+        
+        if not source_path.is_file():
+            print(f"❌ Path is not a file: {source_path.resolve()}")
+            return None
+        
+        backends = [
+            ("FFMPEG", cv2.CAP_FFMPEG),
+            ("DSHOW", cv2.CAP_DSHOW),
+            ("MSMF", cv2.CAP_MSMF),
+            ("Default", None),
+        ]
+        
+        for name, backend in backends:
+            try:
+                if backend is not None:
+                    cap = cv2.VideoCapture(str(source_path), backend)
+                else:
+                    cap = cv2.VideoCapture(str(source_path))
+                
+                if cap.isOpened():
+                    print(f"✓ Opened with backend: {name}")
+                    return cap
+                cap.release()
+            except Exception as e:
+                print(f"⚠️  Backend {name} failed: {e}")
+        
+        return None
+    
+    def _print_troubleshooting(self, source):
+        """Print helpful troubleshooting tips for common capture failures"""
+        print("\n🔧 Troubleshooting tips:")
+        if isinstance(source, str):
+            source_path = Path(source)
+            if not source_path.exists():
+                print(f"  • Verify the file exists: {source_path.resolve()}")
+                print("  • Use an absolute path if the file is outside the project folder.")
+            else:
+                print("  • Install/reinstall FFmpeg so OpenCV can decode the video.")
+                print("  • Ensure the file is not locked by another process.")
+                print("  • Try a smaller/copy-edited MP4 with H.264 encoding.")
+                print("  • Check OneDrive sync status if the file is in OneDrive.")
+        else:
+            print("  • Make sure the webcam is connected and not in use by another app.")
+            print("  • Try device index 0 or 1 in the config.")
+        print()
     
     def read_frame(self):
         """

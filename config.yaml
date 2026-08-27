@@ -54,6 +54,16 @@ alerts:
   save_frames: true
   frames_dir: "output/accident_frames"
 
+# Emergency Dispatch Configuration
+emergency_dispatch:
+  enabled: true
+  server_url: "http://127.0.0.1:5001"
+  camera_id: "CAM-01 (Highway Junction 4)"
+  location_name: "MG Road Intersection, Zone 3"
+  latitude: 12.9716
+  longitude: 77.5946
+  cooldown_seconds: 15
+
 # Recording Configuration
 recording:
   # Save output video with detections

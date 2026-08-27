@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hospital Emergency Command Console</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">🏥</div>
+      <div>
+        <h1>Emergency Command Console</h1>
+        <p>AI Accident Detection & Ambulance Dispatch</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge" id="serverStatusBadge">
+        <span class="pulse-dot"></span>
+        <span id="statusText">LIVE</span>
+      </div>
+      <button class="btn btn-muted" id="toggleAudioBtn">🔊 Sound ON</button>
+      <button class="btn btn-danger" id="triggerDemoBtn">⚡ Test Alert</button>
+    </div>
+  </header>
+
+  <div class="stats-bar">
+    <div class="stat-item">
+      <span class="stat-num" id="pendingCount">0</span>
+      <span class="stat-label">Pending</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-num blue" id="activeDispatchCount">0</span>
+      <span class="stat-label">Dispatched</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-num green" id="fleetAvailable">3/4</span>
+      <span class="stat-label">Fleet Available</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-num amber">1.4m</span>
+      <span class="stat-label">Avg Response</span>
+    </div>
+  </div>
+
+  <main class="main-layout">
+
+    <!-- Alerts Feed -->
+    <section class="panel">
+      <div class="panel-header">
+        <h2>🚨 Live Emergency Alerts</h2>
+        <span class="badge-count" id="alertCountBadge">0 alerts</span>
+      </div>
+      <div class="alerts-feed" id="alertsList">
+        <div class="empty-state">
+          <div class="empty-icon">📡</div>
+          <p>Monitoring active. No incidents detected.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column -->
+    <aside class="side-panel">
+      <!-- Fleet -->
+      <section class="panel">
+        <div class="panel-header">
+          <h2>🚑 Ambulance Fleet</h2>
+          <span id="fleetStatusText" style="font-size:0.78rem;color:var(--muted);">4 Units</span>
+        </div>
+        <div class="fleet-list" id="fleetList"></div>
+      </section>
+    </aside>
+
+  </main>
+
+  <!-- Dispatch Modal -->
+  <div class="modal-overlay" id="dispatchModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="modalTitle">🚨 Dispatch Ambulance</h3>
+        <button class="modal-close" id="closeModalBtn">✕</button>
+      </div>
+
+      <div class="incident-info" id="modalIncidentInfo">
+        <!-- Populated by JS -->
+      </div>
+
+      <div class="modal-snapshot-wrap">
+        <img id="modalSnapshot" src="" alt="Incident frame" class="modal-snapshot">
+      </div>
+
+      <label class="field-label">Select Ambulance Unit</label>
+      <select id="ambulanceSelect" class="field-select"></select>
+
+      <div class="modal-actions">
+        <button class="btn btn-muted" id="cancelDispatchBtn">Cancel</button>
+        <button class="btn btn-dispatch" id="confirmDispatchBtn">🚑 Dispatch Now</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let alerts = [], ambulances = [], currentAlertId = null, audioEnabled = true, audioCtx = null;
+
+    function playAlert() {
+      if (!audioEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1400, audioCtx.currentTime + 0.3);
+        osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.6);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.6);
+      } catch(e) {}
+    }
+
+    document.getElementById('toggleAudioBtn').onclick = () => {
+      audioEnabled = !audioEnabled;
+      document.getElementById('toggleAudioBtn').textContent = audioEnabled ? '🔊 Sound ON' : '🔇 Sound OFF';
+    };
+
+    async function init() {
+      await fetchAmbulances();
+      await fetchAlerts();
+      setupSSE();
+    }
+
+    async function fetchAlerts() {
+      const r = await fetch('/api/alerts').catch(() => null);
+      if (!r) return;
+      const d = await r.json();
+      if (d.status === 'success') { alerts = d.alerts; renderAlerts(); updateStats(); }
+    }
+
+    async function fetchAmbulances() {
+      const r = await fetch('/api/ambulances').catch(() => null);
+      if (!r) return;
+      const d = await r.json();
+      if (d.status === 'success') { ambulances = d.ambulances; renderFleet(); }
+    }
+
+    function setupSSE() {
+      const sse = new EventSource('/api/events');
+      sse.onopen = () => {
+        document.getElementById('statusText').textContent = 'LIVE';
+        document.getElementById('serverStatusBadge').style.borderColor = 'rgba(52,199,89,0.4)';
+      };
+      sse.addEventListener('new_alert', e => {
+        const a = JSON.parse(e.data);
+        if (!alerts.some(x => x.id === a.id)) {
+          alerts.unshift(a);
+          renderAlerts(); updateStats(); playAlert();
+        }
+      });
+      sse.addEventListener('alert_updated', e => {
+        const a = JSON.parse(e.data);
+        const i = alerts.findIndex(x => x.id === a.id);
+        if (i !== -1) { alerts[i] = a; renderAlerts(); updateStats(); fetchAmbulances(); }
+      });
+      sse.onerror = () => { document.getElementById('statusText').textContent = 'RECONNECTING'; };
+    }
+
+    function severityColor(s) {
+      if (!s) return 'amber';
+      const sl = s.toLowerCase();
+      if (sl === 'critical') return 'red';
+      if (sl === 'high') return 'amber';
+      return 'blue';
+    }
+
+    function renderAlerts() {
+      const el = document.getElementById('alertsList');
+      document.getElementById('alertCountBadge').textContent = `${alerts.length} alert${alerts.length !== 1 ? 's' : ''}`;
+      if (!alerts.length) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><p>Monitoring active. No incidents detected.</p></div>';
+        return;
+      }
+      el.innerHTML = '';
+      alerts.forEach(a => {
+        const isPending = a.status === 'PENDING';
+        const color = severityColor(a.severity);
+        const card = document.createElement('div');
+        card.className = `alert-card ${isPending ? 'pending' : 'done'}`;
+        const fallback = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='80'><rect width='120' height='80' fill='%231a2035'/><text x='50%25' y='55%25' fill='%23ff3b30' text-anchor='middle' font-size='11'>No Snapshot</text></svg>`;
+        card.innerHTML = `
+          <div class="alert-card-left">
+            <img class="alert-thumb" src="${a.image_data || fallback}" alt="snapshot">
+          </div>
+          <div class="alert-card-body">
+            <div class="alert-meta">
+              <span class="sev-badge ${color}">${a.severity || 'HIGH'}</span>
+              <span class="alert-time">${a.formatted_time || 'Just now'} &nbsp;•&nbsp; #${a.id}</span>
+            </div>
+            <div class="alert-location">📍 ${a.location_name}</div>
+            <div class="alert-sub">📹 ${a.camera_id} &nbsp;|&nbsp; 🎯 Confidence: <strong>${Math.round(a.confidence * 100)}%</strong></div>
+            <div class="alert-status-row">
+              ${isPending
+                ? `<span class="status-chip red">🔴 Awaiting Response</span>
+                   <button class="btn btn-dispatch-sm" onclick="openModal('${a.id}')">🚑 Dispatch</button>`
+                : `<span class="status-chip green">✅ ${a.assigned_ambulance ? a.assigned_ambulance.name : 'Dispatched'} — ETA ${a.eta_mins || '?'} min</span>`
+              }
+            </div>
+          </div>`;
+        el.appendChild(card);
+      });
+    }
+
+    function renderFleet() {
+      const el = document.getElementById('fleetList');
+      el.innerHTML = '';
+      ambulances.forEach(a => {
+        const avail = a.status === 'AVAILABLE';
+        const item = document.createElement('div');
+        item.className = 'fleet-row';
+        item.innerHTML = `
+          <div class="fleet-info">
+            <strong>${a.name}</strong>
+            <span>${a.type} · ${a.driver}</span>
+          </div>
+          <span class="fleet-chip ${avail ? 'green' : 'amber'}">${avail ? '🟢 Available' : '🟡 On Mission'}</span>`;
+        el.appendChild(item);
+      });
+    }
+
+    function updateStats() {
+      const pending = alerts.filter(a => a.status === 'PENDING').length;
+      const dispatched = alerts.filter(a => a.status === 'DISPATCHED').length;
+      const avail = ambulances.filter(a => a.status === 'AVAILABLE').length;
+      document.getElementById('pendingCount').textContent = pending;
+      document.getElementById('activeDispatchCount').textContent = dispatched;
+      document.getElementById('fleetAvailable').textContent = `${avail}/${ambulances.length}`;
+    }
+
+    function openModal(alertId) {
+      currentAlertId = alertId;
+      const a = alerts.find(x => x.id === alertId);
+      if (!a) return;
+      document.getElementById('modalTitle').textContent = `🚨 Incident #${a.id}`;
+      document.getElementById('modalIncidentInfo').innerHTML = `
+        <div class="info-grid">
+          <div><span class="info-label">Location</span><strong>${a.location_name}</strong></div>
+          <div><span class="info-label">Camera</span><strong>${a.camera_id}</strong></div>
+          <div><span class="info-label">Confidence</span><strong style="color:var(--green)">${Math.round(a.confidence*100)}%</strong></div>
+          <div><span class="info-label">Severity</span><strong style="color:var(--red)">${a.severity}</strong></div>
+        </div>`;
+      const fallback = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='260'><rect width='600' height='260' fill='%231a2035'/><text x='50%25' y='50%25' fill='%23ff3b30' text-anchor='middle' font-size='18'>🚨 Accident Frame</text></svg>`;
+      document.getElementById('modalSnapshot').src = a.image_data || fallback;
+
+      const sel = document.getElementById('ambulanceSelect');
+      sel.innerHTML = '';
+      const avail = ambulances.filter(x => x.status === 'AVAILABLE');
+      const list = avail.length ? avail : ambulances;
+      list.forEach(amb => {
+        sel.innerHTML += `<option value="${amb.id}">${amb.name} · ${amb.driver} (ETA ${amb.eta_mins} min)</option>`;
+      });
+
+      document.getElementById('dispatchModal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('dispatchModal').classList.remove('active');
+      currentAlertId = null;
+    }
+
+    document.getElementById('closeModalBtn').onclick = closeModal;
+    document.getElementById('cancelDispatchBtn').onclick = closeModal;
+
+    document.getElementById('confirmDispatchBtn').onclick = async () => {
+      if (!currentAlertId) return;
+      const ambId = document.getElementById('ambulanceSelect').value;
+      const res = await fetch(`/api/alerts/${currentAlertId}/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ambulance_id: ambId })
+      });
+      const d = await res.json();
+      if (d.status === 'success') { closeModal(); await fetchAlerts(); await fetchAmbulances(); }
+    };
+
+    document.getElementById('triggerDemoBtn').onclick = async () => {
+      const res = await fetch('/api/demo/trigger', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+      const d = await res.json();
+      if (d.status === 'success') playAlert();
+    };
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
