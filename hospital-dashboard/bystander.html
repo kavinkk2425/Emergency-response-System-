@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bystander Emergency Portal — Accicare</title>
+  <!-- Google Fonts -->
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Premium Bystander Portal Specific Overrides & Enhancements */
+    body {
+      background-attachment: fixed;
+      font-family: 'Inter', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 520px;
+      padding: 20px 16px 80px 16px;
+      box-sizing: border-box;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+      margin-bottom: 20px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .glassmorphism {
+      background: rgba(22, 27, 39, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* Auth Screens styling */
+    .auth-title-container {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .auth-title-container h2 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 30%, #a5b4fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+
+    .auth-title-container p {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .form-input {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      padding: 12px;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+    }
+
+    .auth-toggle {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 16px;
+    }
+
+    .auth-toggle a {
+      color: var(--blue);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .auth-toggle a:hover {
+      text-decoration: underline;
+    }
+
+    /* Header Profile */
+    .portal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    .user-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .user-info strong {
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .user-info span {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* Tab switcher */
+    .tab-bar {
+      display: flex;
+      background: var(--bg-card-2);
+      padding: 4px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      color: var(--muted);
+      padding: 10px;
+      border-radius: calc(var(--radius) - 2px);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: var(--bg-card);
+      color: var(--text);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    /* Upload Area */
+    .upload-zone {
+      border: 2px dashed var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 30px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(28, 35, 51, 0.4);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .upload-zone:hover {
+      border-color: var(--blue);
+      background: rgba(88, 166, 255, 0.04);
+    }
+
+    .upload-icon {
+      font-size: 2.5rem;
+    }
+
+    .upload-zone input[type="file"] {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .preview-container {
+      width: 100%;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      margin-top: 14px;
+      position: relative;
+      aspect-ratio: 16 / 10;
+      display: none;
+    }
+
+    .preview-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .remove-preview-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      backdrop-filter: blur(4px);
+    }
+
+    .remove-preview-btn:hover {
+      background: var(--red);
+    }
+
+    /* Interactive Leaflet Map */
+    .map-container {
+      height: 180px;
+      width: 100%;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-top: 10px;
+      position: relative;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* Dark Mode Map Hack */
+    .leaflet-layer,
+    .leaflet-control-zoom-in,
+    .leaflet-control-zoom-out,
+    .leaflet-control-attribution {
+      filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+    }
+
+    .location-details {
+      margin-top: 10px;
+      padding: 10px;
+      background: var(--bg-card-2);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+
+    .location-details div {
+      margin-bottom: 4px;
+    }
+
+    .location-details div:last-child {
+      margin-bottom: 0;
+    }
+
+    .location-details strong {
+      color: var(--text);
+    }
+
+    /* Nearby Hospitals */
+    .hospital-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .hospital-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.8rem;
+    }
+
+    .hospital-item-left {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .hospital-item-left strong {
+      color: var(--text);
+    }
+
+    .hospital-distance {
+      background: rgba(88, 166, 255, 0.1);
+      color: var(--blue);
+      border: 1px solid rgba(88, 166, 255, 0.2);
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.72rem;
+    }
+
+    /* Submit Loader overlay */
+    .loader-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(13, 17, 23, 0.95);
+      backdrop-filter: blur(8px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .loader-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255, 255, 255, 0.06);
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loader-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .loader-sub {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-align: center;
+      max-width: 320px;
+    }
+
+    /* AI Analysis Success Popups */
+    .success-card {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .success-icon {
+      font-size: 3rem;
+      animation: bounce 1s infinite alternate;
+    }
+
+    @keyframes bounce {
+      from {
+        transform: translateY(0);
+      }
+
+      to {
+        transform: translateY(-10px);
+      }
+    }
+
+    .success-badge {
+      background: rgba(63, 185, 80, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+
+    .success-badge.red {
+      background: rgba(248, 81, 73, 0.15);
+      color: var(--red);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+    }
+
+    /* History Feed */
+    .history-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 480px;
+      overflow-y: auto;
+    }
+
+    .history-card {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      display: flex;
+      gap: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .history-card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-2px);
+    }
+
+    .history-thumb {
+      width: 70px;
+      height: 50px;
+      object-fit: cover;
+      border-radius: 6px;
+      background: #000;
+    }
+
+    .history-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .history-title {
+      font-weight: 600;
+      font-size: 0.85rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+
+    .history-time {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .history-status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .history-status-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .status-pending {
+      background: rgba(227, 179, 65, 0.15);
+      color: var(--amber);
+    }
+
+    .status-dispatched {
+      background: rgba(88, 166, 255, 0.15);
+      color: var(--blue);
+    }
+
+    .status-completed {
+      background: rgba(63, 185, 80, 0.15);
+      color: var(--green);
+    }
+
+    /* Alert Banner */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #f85149;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 30px;
+      box-shadow: 0 8px 24px rgba(248, 81, 73, 0.3);
+      font-weight: 600;
+      font-size: 0.9rem;
+      z-index: 10000;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .toast.active {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .toast.success-toast {
+      background: #3fb950;
+      box-shadow: 0 8px 24px rgba(63, 185, 80, 0.3);
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Futuristic Glowing Orbs -->
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast">Error Message</div>
+
+  <!-- Loading AI Processing Overlay -->
+  <div id="loaderOverlay" class="loader-overlay">
+    <div class="spinner"></div>
+    <div class="loader-title" id="loaderTitle">Analyzing Collision...</div>
+    <div class="loader-sub" id="loaderSub">AI model (YOLOv8) is running live validation algorithms to detect vehicle
+      damage and crash severity...</div>
+  </div>
+
+  <div class="container">
+
+    <!-- Brand Header -->
+    <header class="app-header"
+      style="border-radius: var(--radius-lg); margin-bottom: 20px; background: var(--bg-card); padding: 0 16px;">
+      <div class="brand">
+        <div class="brand-icon">🚨</div>
+        <div>
+          <h1>Bystander Emergency Portal</h1>
+          <p>Instantly Report Collisions & Alert Hospitals</p>
+        </div>
+      </div>
+      <a href="/" class="btn btn-muted" style="padding: 5px 10px; font-size: 0.72rem;">🏥 Console</a>
+    </header>
+
+    <!-- AUTHENTICATION PANELS (Register & Login) -->
+    <div id="authPanel" class="card glassmorphism">
+      <!-- REGISTER FORM -->
+      <div id="registerFormContainer">
+        <div class="auth-title-container">
+          <h2>Create Bystander Profile</h2>
+          <p>Register to submit emergency reports and verify locations</p>
+        </div>
+        <form id="registerForm" onsubmit="handleRegister(event)">
+          <div class="form-group">
+            <label for="regName">Full Name</label>
+            <input type="text" id="regName" class="form-input" placeholder="e.g. Rahul Sharma" required
+              autocomplete="name">
+          </div>
+          <div class="form-group">
+            <label for="regPhone">Phone Number</label>
+            <input type="tel" id="regPhone" class="form-input" placeholder="e.g. +91 9876543210" required
+              autocomplete="tel">
+          </div>
+          <div class="form-group">
+            <label for="regEmail">Email Address</label>
+            <input type="email" id="regEmail" class="form-input" placeholder="e.g. rahul@gmail.com" required
+              autocomplete="email">
+          </div>
+          <div class="form-group">
+            <label for="regPassword">Secure Password</label>
+            <input type="password" id="regPassword" class="form-input" placeholder="••••••••" required
+              autocomplete="new-password">
+          </div>
+          <button type="submit" class="btn btn-dispatch"
+            style="width: 100%; justify-content: center; margin-top: 10px;">👤 Register & Continue</button>
+        </form>
+        <div class="auth-toggle">
+          Already registered? <a href="#" onclick="toggleAuthForms(false)">Sign In here</a>
+        </div>
+      </div>
+
+      <!-- LOGIN FORM -->
+      <div id="loginFormContainer" style="display: none;">
+        <div class="auth-title-container">
+          <h2>Sign In to Portal</h2>
+          <p>Enter your bystander credentials to access reporting</p>
+        </div>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+          <div class="form-group">
+            <label for="loginEmail">Email Address</label>
+            <input type="email" id="loginEmail" class="form-input" placeholder="rahul@gmail.com" required
+              autocomplete="email">
+          </div>
+          <div class="form-group">
+            <label for="loginPassword">Password</label>
+            <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required
+              autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn btn-dispatch"
+            style="width: 100%; justify-content: center; margin-top: 10px;">🔑 Sign In</button>
+        </form>
+        <div class="auth-toggle">
+          Need an account? <a href="#" onclick="toggleAuthForms(true)">Create Profile</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN PORTAL CONTAINER (Hidden by default) -->
+    <div id="portalPanel" style="display: none;">
+
+      <!-- Profile Header -->
+      <div class="portal-header">
+        <div class="user-info">
+          <strong id="userNameText">Rahul Sharma</strong>
+          <span id="userPhoneText">+91 98765-43210 (Bystander)</span>
+        </div>
+        <button onclick="handleLogout()" class="btn btn-muted" style="padding: 6px 12px; font-size: 0.78rem;">🚪 Sign
+          Out</button>
+      </div>
+
+      <!-- Tabs Navigation -->
+      <div class="tab-bar">
+        <button id="tabReportBtn" class="tab-btn active" onclick="switchTab('report')">🚨 Report Collision</button>
+        <button id="tabHistoryBtn" class="tab-btn" onclick="switchTab('history')">📋 My Reports</button>
+      </div>
+
+      <!-- TAB 1: REPORT ACCIDENT -->
+      <div id="tabReport" class="tab-content">
+
+        <!-- Upload Form -->
+        <div class="card glassmorphism" id="reportCard">
+          <h3 style="margin-bottom: 12px; font-size: 0.95rem; font-weight: 700;">📸 Upload Incident Photo</h3>
+
+          <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">📸</div>
+            <strong>Capture or Select Image</strong>
+            <p style="font-size: 0.72rem; color: var(--muted);">Supports Camera capture, Drag & Drop or Browse</p>
+            <input type="file" id="imageFileInput" accept="image/*" onchange="handleFileSelect(event)">
+          </div>
+
+          <!-- Preview Wrapper -->
+          <div class="preview-container" id="previewContainer">
+            <img id="previewImage" class="preview-img" src="" alt="Incident Preview">
+            <button class="remove-preview-btn" onclick="removePreview()">✕</button>
+          </div>
+
+          <div style="margin-top: 18px;">
+            <h3
+              style="margin-bottom: 8px; font-size: 0.95rem; font-weight: 700; display: flex; align-items: center; justify-content: space-between;">
+              <span>📍 Accident Location</span>
+              <button onclick="detectGeolocation()" class="btn btn-muted"
+                style="padding: 4px 8px; font-size: 0.7rem; border-radius: 6px;" type="button">🎯 Reset GPS</button>
+            </h3>
+
+            <div class="map-container">
+              <div id="map"></div>
+            </div>
+
+            <div class="location-details">
+              <div>📍 <strong>Address:</strong> <span id="locationAddress">Loading GPS coordinates...</span></div>
+              <div style="font-size: 0.75rem; color: var(--muted); margin-top: 4px;">ℹ️ You can drag the map marker to
+                adjust the exact crash location.</div>
+            </div>
+            
+            <!-- Google Maps Link Field -->
+            <div class="form-group" style="margin-top: 14px;">
+              <label for="gmapsLinkInput" style="font-size: 0.8rem; font-weight: 600; color: var(--text); margin-bottom: 6px; display: block;">🔗 Paste Google Maps Location Link (Optional)</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="gmapsLinkInput" class="form-input" style="flex: 1; font-size: 0.8rem; height: 36px; padding: 0 12px; border-radius: 8px;" placeholder="https://maps.app.goo.gl/... or @lat,lng" oninput="handleGmapsLinkInput(this.value)">
+                <button onclick="clearGmapsLink()" class="btn btn-muted" style="padding: 0 12px; height: 36px; border-radius: 8px;" type="button" title="Clear Link">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Nearby Healthcare Centers -->
+          <div style="margin-top: 18px;">
+            <h3 style="margin-bottom: 6px; font-size: 0.95rem; font-weight: 700;">🏥 Nearest Healthcare Centers</h3>
+            <p style="font-size: 0.72rem; color: var(--muted); margin-bottom: 8px;">Calculated automatically based on
+              report coordinates</p>
+            <div class="hospital-list" id="nearestHospitals">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <button id="submitAlertBtn" onclick="submitEmergencyReport()" class="btn btn-danger"
+            style="width: 100%; justify-content: center; font-size: 0.95rem; padding: 12px; margin-top: 20px;" disabled>
+            ⚡ Submit Emergency Alert
+          </button>
+        </div>
+
+        <!-- SUCCESS SCREEN -->
+        <div class="card glassmorphism success-card" id="successCard" style="display: none;">
+          <div class="success-icon">🚨</div>
+          <h2 style="font-size: 1.3rem; font-weight: 800; color: var(--text);">Emergency Alert Routed!</h2>
+
+          <div id="aiDetectorBadge" class="success-badge">AI ACCIDENT VERIFIED</div>
+
+          <div class="preview-container" id="aiResultPreviewContainer" style="display: block; margin: 10px 0;">
+            <img id="aiResultImage" class="preview-img" src="" alt="AI detection output">
+          </div>
+
+          <div class="location-details" style="width: 100%; text-align: left;">
+            <div style="border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 6px;">
+              🏥 <strong>Routed Center:</strong> <span id="successHospitalName">Metro Hospital</span>
+            </div>
+            <div>
+              📞 <strong>Center Contact:</strong> <span id="successHospitalPhone">+91 80 2520 3333</span>
+            </div>
+            <div style="margin-top: 4px;">
+              📏 <strong>Distance:</strong> <span id="successHospitalDistance">0.8 km</span>
+            </div>
+            <div style="margin-top: 4px;">
+              🆔 <strong>Incident ID:</strong> <code id="successIncidentId">ALT-000000</code>
+            </div>
+          </div>
+
+          <p style="font-size: 0.8rem; color: var(--muted);">Emergency centers and ambulance crews have been pinged with
+            the crash coordinates and image analysis report.</p>
+
+          <button onclick="resetReportForm()" class="btn btn-muted"
+            style="width: 100%; justify-content: center; padding: 10px;">🚨 Report Another Incident</button>
+        </div>
+
+      </div>
+
+      <!-- TAB 2: MY REPORTS -->
+      <div id="tabHistory" class="tab-content" style="display: none;">
+        <div class="card glassmorphism">
+          <h3
+            style="margin-bottom: 14px; font-size: 0.95rem; font-weight: 700; display: flex; justify-content: space-between; align-items: center;">
+            <span>📋 Report History</span>
+            <span class="badge-count" id="historyCountBadge">0 reports</span>
+          </h3>
+
+          <div class="history-feed" id="historyFeed">
+            <div class="empty-state" style="padding: 30px 10px;">
+              <div class="empty-icon">📁</div>
+              <p>No alerts reported by you yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Leaflet Map JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Client Code -->
+  <script>
+    let currentUser = null;
+    let map = null;
+    let marker = null;
+    let currentLat = 12.9716;
+    let currentLng = 77.5946;
+    let base64Image = null;
+    let activeTab = 'report';
+    let reverseGeocodeTimer = null;
+    let customGmapsLink = "";
+
+    // Parse and handle Google Maps Link Paste
+    async function handleGmapsLinkInput(url) {
+      url = url.trim();
+      if (!url) {
+        customGmapsLink = "";
+        return;
+      }
+      
+      customGmapsLink = url;
+
+      // 1. Try to parse directly in frontend if it's a long google maps coordinates link
+      const matchAt = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      const matchPlace = url.match(/place\/(-?\d+\.\d+),(-?\d+\.\d+)/);
+      const matchQ = url.match(/[q|query|ll]=(-?\d+\.\d+),(-?\d+\.\d+)/);
+
+      let detectedLat = null;
+      let detectedLng = null;
+
+      if (matchAt) {
+        detectedLat = parseFloat(matchAt[1]);
+        detectedLng = parseFloat(matchAt[2]);
+      } else if (matchPlace) {
+        detectedLat = parseFloat(matchPlace[1]);
+        detectedLng = parseFloat(matchPlace[2]);
+      } else if (matchQ) {
+        detectedLat = parseFloat(matchQ[1]);
+        detectedLng = parseFloat(matchQ[2]);
+      }
+
+      if (detectedLat && detectedLng) {
+        updateCoordinates(detectedLat, detectedLng, true);
+        showToast("📍 Coordinates parsed successfully from Google Maps link!", true);
+        return;
+      }
+
+      // 2. If it's a short URL (contains maps.app.goo.gl or goo.gl/maps), call backend resolver
+      if (url.includes("maps.app.goo.gl") || url.includes("goo.gl/maps") || url.includes("goo.gl")) {
+        showToast("Resolving short Google Maps link...", true);
+        try {
+          const res = await fetch(`/api/resolve-maps-link?url=${encodeURIComponent(url)}`);
+          const data = await res.json();
+          if (data.status === "success" && data.latitude && data.longitude) {
+            updateCoordinates(data.latitude, data.longitude, true);
+            showToast("📍 Exact location resolved from Google Maps link!", true);
+          } else {
+            showToast("Could not extract coordinates from link. Please position marker manually.");
+          }
+        } catch (e) {
+          console.error("Failed to resolve link: ", e);
+          showToast("Error resolving short link. Please position marker manually.");
+        }
+      }
+    }
+
+    function clearGmapsLink() {
+      customGmapsLink = "";
+      document.getElementById('gmapsLinkInput').value = "";
+      showToast("Google Maps link cleared.");
+    }
+
+    // Toast message helper
+    function showToast(message, isSuccess = false) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      if (isSuccess) {
+        toast.classList.add('success-toast');
+      } else {
+        toast.classList.remove('success-toast');
+      }
+      toast.classList.add('active');
+      setTimeout(() => {
+        toast.classList.remove('active');
+      }, 4000);
+    }
+
+    // Toggle between login and registration forms
+    function toggleAuthForms(showRegister) {
+      document.getElementById('registerFormContainer').style.display = showRegister ? 'block' : 'none';
+      document.getElementById('loginFormContainer').style.display = showRegister ? 'none' : 'block';
+    }
+
+    // Check active session on load
+    async function checkSession() {
+      try {
+        const res = await fetch('/api/auth/session');
+        const data = await res.json();
+        if (data.status === 'success' && data.user) {
+          currentUser = data.user;
+          showPortal();
+        } else {
+          showAuth();
+        }
+      } catch (e) {
+        showAuth();
+      }
+    }
+
+    function showAuth() {
+      currentUser = null;
+      document.getElementById('authPanel').style.display = 'block';
+      document.getElementById('portalPanel').style.display = 'none';
+    }
+
+    function showPortal() {
+      document.getElementById('authPanel').style.display = 'none';
+      document.getElementById('portalPanel').style.display = 'block';
+
+      document.getElementById('userNameText').textContent = currentUser.name;
+      document.getElementById('userPhoneText').textContent = `${currentUser.phone} · ${currentUser.email}`;
+
+      // Initialize map if not yet done
+      initMap();
+      // Start Geolocation search
+      detectGeolocation();
+      // Load reports
+      fetchReports();
+    }
+
+    // Auth Submission Handlers
+    async function handleRegister(event) {
+      event.preventDefault();
+      const name = document.getElementById('regName').value;
+      const phone = document.getElementById('regPhone').value;
+      const email = document.getElementById('regEmail').value;
+      const password = document.getElementById('regPassword').value;
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, phone, email, password })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentUser = data.user;
+          showToast('Registration successful! Welcome.', true);
+          showPortal();
+        } else {
+          showToast(data.message || 'Registration failed');
+        }
+      } catch (err) {
+        showToast('Server connection failed. Try again.');
+      }
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentUser = data.user;
+          showToast('Signed in successfully!', true);
+          showPortal();
+        } else {
+          showToast(data.message || 'Invalid credentials');
+        }
+      } catch (err) {
+        showToast('Server connection failed. Try again.');
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        showToast('Signed out successfully', true);
+        showAuth();
+      } catch (e) {
+        showAuth();
+      }
+    }
+
+    // Leaflet Map Initialization
+    function initMap() {
+      if (map) return; // Map already exists
+
+      map = L.map('map', {
+        zoomControl: false
+      }).setView([currentLat, currentLng], 14);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+
+      // Create a draggable marker at default location
+      marker = L.marker([currentLat, currentLng], {
+        draggable: true
+      }).addTo(map);
+
+      // Marker Drag listener
+      marker.on('dragend', function (event) {
+        const position = marker.getLatLng();
+        updateCoordinates(position.lat, position.lng, false); // Don't pan map center
+      });
+
+      // Map Click listener (adjust marker on click)
+      map.on('click', function (event) {
+        const coords = event.latlng;
+        marker.setLatLng(coords);
+        updateCoordinates(coords.lat, coords.lng, false);
+      });
+    }
+
+    // Geolocation detection
+    function detectGeolocation() {
+      if (!navigator.geolocation) {
+        showToast("Geolocation not supported by browser. Using default.");
+        updateCoordinates(currentLat, currentLng, true);
+        return;
+      }
+
+      showToast("Detecting your location coordinates...", true);
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          updateCoordinates(position.coords.latitude, position.coords.longitude, true);
+          showToast("Location synchronized successfully!", true);
+        },
+        (error) => {
+          console.warn("Geolocation permission error: ", error.message);
+          showToast("Geolocation permission denied. Click on map to position.");
+          updateCoordinates(currentLat, currentLng, true);
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    }
+
+    // Update Coordinates state
+    function updateCoordinates(lat, lng, centerMap = false) {
+      currentLat = lat;
+      currentLng = lng;
+
+      if (marker) {
+        marker.setLatLng([lat, lng]);
+      }
+
+      if (map && centerMap) {
+        map.panTo([lat, lng]);
+      }
+
+      // Fetch reverse geocode address (with debouncer)
+      clearTimeout(reverseGeocodeTimer);
+      document.getElementById('locationAddress').textContent = 'Resolving address details...';
+      reverseGeocodeTimer = setTimeout(fetchAddressName, 800);
+
+      // Fetch nearby hospitals
+      fetchNearbyHospitals(lat, lng);
+    }
+
+    // Reverse Geocoding via OSM Nominatim
+    async function fetchAddressName() {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}&zoom=18&addressdetails=1`;
+        const res = await fetch(url, {
+          headers: { 'Accept-Language': 'en' }
+        });
+        const data = await res.json();
+        if (data && data.display_name) {
+          document.getElementById('locationAddress').textContent = data.display_name;
+        } else {
+          document.getElementById('locationAddress').textContent = `Lat: ${currentLat.toFixed(5)}, Lng: ${currentLng.toFixed(5)}`;
+        }
+      } catch (err) {
+        document.getElementById('locationAddress').textContent = `Lat: ${currentLat.toFixed(5)}, Lng: ${currentLng.toFixed(5)}`;
+      }
+    }
+
+    // Fetch nearest hospitals from backend
+    async function fetchNearbyHospitals(lat, lng) {
+      try {
+        const res = await fetch(`/api/healthcare-centers?latitude=${lat}&longitude=${lng}`);
+        const data = await res.json();
+        if (data.status === 'success') {
+          const list = document.getElementById('nearestHospitals');
+          list.innerHTML = '';
+          // Show only top 3 nearest centers
+          const topCenters = data.centers.slice(0, 3);
+          topCenters.forEach(c => {
+            list.innerHTML += `
+              <div class="hospital-item">
+                <div class="hospital-item-left">
+                  <strong>${c.name}</strong>
+                  <span style="font-size:0.68rem; color:var(--muted);">${c.address}</span>
+                </div>
+                <div class="hospital-distance">📏 ${c.distance} km</div>
+              </div>`;
+          });
+        }
+      } catch (e) {
+        console.error("Error fetching healthcare centers: ", e);
+      }
+    }
+
+    // Image File Selection & Base64 Encoder
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        base64Image = e.target.result;
+
+        // Show preview
+        document.getElementById('previewImage').src = base64Image;
+        document.getElementById('previewContainer').style.display = 'block';
+        document.getElementById('uploadZone').style.display = 'none';
+
+        // Try to read EXIF coordinates (Advanced - optional)
+        // If EXIF coordinate reading is available we could parse it here,
+        // but default geolocation API and marker manipulation is highly reliable.
+
+        validateForm();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removePreview() {
+      base64Image = null;
+      document.getElementById('imageFileInput').value = '';
+      document.getElementById('previewContainer').style.display = 'none';
+      document.getElementById('uploadZone').style.display = 'flex';
+      validateForm();
+    }
+
+    function validateForm() {
+      const submitBtn = document.getElementById('submitAlertBtn');
+      if (base64Image && currentLat && currentLng) {
+        submitBtn.removeAttribute('disabled');
+      } else {
+        submitBtn.setAttribute('disabled', 'true');
+      }
+    }
+
+    // Submit report to Backend
+    async function submitEmergencyReport() {
+      if (!base64Image) {
+        showToast("Please choose or snap a picture first.");
+        return;
+      }
+
+      // Show loader
+      const loader = document.getElementById('loaderOverlay');
+      loader.classList.add('active');
+
+      const address = document.getElementById('locationAddress').textContent;
+
+      try {
+        const res = await fetch('/api/bystander/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image_data: base64Image,
+            latitude: currentLat,
+            longitude: currentLng,
+            location_name: address.startsWith('Resolving') || address.startsWith('Loading') ? '' : address,
+            gmaps_link: customGmapsLink
+          })
+        });
+
+        const data = await res.json();
+        loader.classList.remove('active');
+
+        if (data.status === 'success') {
+          showToast("Alert successfully received by nearest healthcare centers!", true);
+          renderSuccessScreen(data);
+        } else {
+          showToast(data.message || "Failed to submit report.");
+        }
+      } catch (err) {
+        loader.classList.remove('active');
+        showToast("Error communicating with server.");
+      }
+    }
+
+    function renderSuccessScreen(data) {
+      // Hide report form card, show success card
+      document.getElementById('reportCard').style.display = 'none';
+      document.getElementById('successCard').style.display = 'block';
+
+      const alert = data.alert;
+      const closestCenter = data.healthcare_centers[0];
+
+      // Update AI detection outcome
+      const aiBadge = document.getElementById('aiDetectorBadge');
+      if (data.accident_detected) {
+        aiBadge.textContent = 'AI ACCIDENT CONFIRMED';
+        aiBadge.className = 'success-badge red';
+        aiBadge.style.background = 'rgba(248, 81, 73, 0.15)';
+        aiBadge.style.color = 'var(--red)';
+        aiBadge.style.borderColor = 'rgba(248, 81, 73, 0.3)';
+      } else {
+        aiBadge.textContent = 'ROUTED FOR OPERATOR CONFIRMATION';
+        aiBadge.className = 'success-badge';
+        aiBadge.style.background = 'rgba(227, 179, 65, 0.15)';
+        aiBadge.style.color = 'var(--amber)';
+        aiBadge.style.borderColor = 'rgba(227, 179, 65, 0.3)';
+      }
+
+      // Display AI annotated image
+      document.getElementById('aiResultImage').src = alert.image_data;
+
+      // Update metadata
+      document.getElementById('successHospitalName').textContent = alert.assigned_hospital;
+      document.getElementById('successHospitalPhone').textContent = alert.assigned_hospital_phone;
+      document.getElementById('successHospitalDistance').textContent = `${alert.distance_to_hospital} km`;
+      document.getElementById('successIncidentId').textContent = alert.id;
+    }
+
+    function resetReportForm() {
+      removePreview();
+      clearGmapsLink();
+      document.getElementById('reportCard').style.display = 'block';
+      document.getElementById('successCard').style.display = 'none';
+      detectGeolocation();
+    }
+
+    // Switch between tabs
+    function switchTab(tab) {
+      activeTab = tab;
+
+      // Toggle tabs UI
+      document.getElementById('tabReportBtn').classList.toggle('active', tab === 'report');
+      document.getElementById('tabHistoryBtn').classList.toggle('active', tab === 'history');
+
+      // Toggle sections
+      document.getElementById('tabReport').style.display = tab === 'report' ? 'block' : 'none';
+      document.getElementById('tabHistory').style.display = tab === 'history' ? 'block' : 'none';
+
+      if (tab === 'history') {
+        fetchReports();
+      }
+    }
+
+    // Fetch reports history
+    async function fetchReports() {
+      if (!currentUser) return;
+      try {
+        const res = await fetch('/api/bystander/my-reports');
+        const data = await res.json();
+
+        if (data.status === 'success') {
+          const feed = document.getElementById('historyFeed');
+          const badge = document.getElementById('historyCountBadge');
+          const reports = data.reports;
+
+          badge.textContent = `${reports.length} report${reports.length !== 1 ? 's' : ''}`;
+
+          if (reports.length === 0) {
+            feed.innerHTML = `
+              <div class="empty-state" style="padding: 30px 10px;">
+                <div class="empty-icon">📁</div>
+                <p>No alerts reported by you yet.</p>
+              </div>`;
+            return;
+          }
+
+          feed.innerHTML = '';
+          reports.forEach(r => {
+            let statusClass = 'status-pending';
+            let statusText = 'Awaiting Dispatch';
+            if (r.status === 'DISPATCHED') {
+              statusClass = 'status-dispatched';
+              statusText = `${r.assigned_ambulance ? r.assigned_ambulance.name : 'Ambulance'} En Route`;
+            } else if (r.status === 'COMPLETED') {
+              statusClass = 'status-completed';
+              statusText = 'Resolved';
+            }
+
+            feed.innerHTML += `
+              <div class="history-card">
+                <img class="history-thumb" src="${r.image_data}" alt="accident thumbnail">
+                <div class="history-body">
+                  <div class="history-title">📍 ${r.location_name}</div>
+                  <div class="history-time">⏱️ ${r.formatted_time} &nbsp;•&nbsp; Hospital: ${r.assigned_hospital || 'Routing...'}</div>
+                  <div class="history-status-row">
+                    <span class="history-status-badge ${statusClass}">● ${statusText}</span>
+                    <span style="font-family: var(--mono); font-size: 0.68rem; color: var(--muted)">#${r.id}</span>
+                  </div>
+                </div>
+              </div>`;
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching reports: ", err);
+      }
+    }
+
+    // Check session when DOM is loaded
+    window.addEventListener('DOMContentLoaded', checkSession);
+  </script>
+</body>
+
+</html>

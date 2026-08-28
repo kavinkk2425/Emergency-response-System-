@@ -11,9 +11,11 @@ import queue
 import base64
 import cv2
 import numpy as np
+import math
+import hashlib
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, request, jsonify, Response, send_from_directory, send_file
+from flask import Flask, request, jsonify, Response, send_from_directory, send_file, session
 
 # Absolute path to hospital dashboard directory
 BASE_DIR = Path(__file__).resolve().parent
@@ -24,6 +26,7 @@ sys.path.insert(0, str(PROJECT_DIR))
 from utils.detector import AccidentDetector
 
 app = Flask(__name__, static_folder="../hospital-dashboard")
+app.secret_key = "bystander-emergency-secret-key-1928"
 
 # Initialize Trained YOLO Accident Model
 MODEL_WEIGHTS = PROJECT_DIR / "runs" / "detect" / "train" / "weights" / "best.pt"
@@ -105,7 +108,96 @@ def broadcast_event(event_type, data):
 
 
 # --------------------------------------------------------------------------
-# Dashboard Static Routes
+# Bystander & Hospital Database Helpers
+# --------------------------------------------------------------------------
+USERS_DB_PATH = PROJECT_DIR / "users_db.json"
+HOSPITALS_DB_PATH = PROJECT_DIR / "hospitals_db.json"
+
+def load_users():
+    if not USERS_DB_PATH.exists():
+        return {}
+    try:
+        with open(USERS_DB_PATH, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_users(users):
+    try:
+        with open(USERS_DB_PATH, "w") as f:
+            json.dump(users, f, indent=4)
+    except Exception as e:
+        print(f"Error saving users: {e}")
+
+def load_hospitals():
+    if not HOSPITALS_DB_PATH.exists():
+        return {}
+    try:
+        with open(HOSPITALS_DB_PATH, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_hospitals(hospitals):
+    try:
+        with open(HOSPITALS_DB_PATH, "w") as f:
+            json.dump(hospitals, f, indent=4)
+    except Exception as e:
+        print(f"Error saving hospitals: {e}")
+
+HEALTHCARE_CENTERS = [
+    {
+        "id": "HC-01",
+        "name": "City Central Trauma Center",
+        "latitude": 12.9716,
+        "longitude": 77.5946,
+        "phone": "+91 80 2221 0000",
+        "address": "MG Road, Bangalore"
+    },
+    {
+        "id": "HC-02",
+        "name": "Apex Emergency Care",
+        "latitude": 12.9912,
+        "longitude": 77.5734,
+        "phone": "+91 80 4115 1111",
+        "address": "Malleshwaram, Bangalore"
+    },
+    {
+        "id": "HC-03",
+        "name": "St. Mary Medical Hospital",
+        "latitude": 12.9348,
+        "longitude": 77.6189,
+        "phone": "+91 80 2553 2222",
+        "address": "Koramangala, Bangalore"
+    },
+    {
+        "id": "HC-04",
+        "name": "Metro Emergency Services",
+        "latitude": 12.9592,
+        "longitude": 77.6412,
+        "phone": "+91 80 2520 3333",
+        "address": "Indiranagar, Bangalore"
+    },
+    {
+        "id": "HC-05",
+        "name": "Bangalore East General Hospital",
+        "latitude": 12.9813,
+        "longitude": 77.6624,
+        "phone": "+91 80 2548 4444",
+        "address": "Krishnarajapuram, Bangalore"
+    }
+]
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    R = 6371.0 # Radius of earth in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+# --------------------------------------------------------------------------
+# Dashboard & Bystander Static Routes
 # --------------------------------------------------------------------------
 @app.route('/')
 def index():
@@ -124,6 +216,528 @@ def camera_page():
     if camera_path.exists():
         return send_file(camera_path)
     return "Live Camera UI not found", 404
+
+
+@app.route('/bystander')
+@app.route('/bystander.html')
+def bystander_page():
+    """Serve Bystander Portal Page"""
+    bystander_path = DASHBOARD_DIR / "bystander.html"
+    if bystander_path.exists():
+        return send_file(bystander_path)
+    return "Bystander Portal UI not found", 404
+
+
+@app.route('/hospital-admin')
+@app.route('/hospital-admin.html')
+def hospital_admin_page():
+    """Serve Hospital Admin/Registration Portal Page"""
+    admin_path = DASHBOARD_DIR / "hospital-admin.html"
+    if admin_path.exists():
+        return send_file(admin_path)
+    return "Hospital Admin UI not found", 404
+
+@app.route('/api/resolve-maps-link', methods=['GET'])
+def resolve_maps_link():
+    """Follow redirects and parse coordinates from Google Maps Link"""
+    url = request.args.get('url', '').strip()
+    if not url:
+        return jsonify({"status": "error", "message": "URL parameter missing"}), 400
+        
+    try:
+        import requests
+        import re
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        r = requests.get(url, headers=headers, allow_redirects=True, timeout=6)
+        final_url = r.url
+        
+        lat_lng_match = None
+        
+        # Try search for pattern like: @latitude,longitude
+        match_at = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+)', final_url)
+        if match_at:
+            lat_lng_match = (match_at.group(1), match_at.group(2))
+        else:
+            # Try search for pattern like: place/latitude,longitude
+            match_place = re.search(r'place/(-?\d+\.\d+),(-?\d+\.\d+)', final_url)
+            if match_place:
+                lat_lng_match = (match_place.group(1), match_place.group(2))
+            else:
+                # Try search for query parameters: q=lat,lng or query=lat,lng or ll=lat,lng
+                match_q = re.search(r'[q|query|ll]=(-?\d+\.\d+),(-?\d+\.\d+)', final_url)
+                if match_q:
+                    lat_lng_match = (match_q.group(1), match_q.group(2))
+                else:
+                    # Let's also parse from text content if it's a redirection page showing lat/lng
+                    match_js = re.search(r'window\.APP_INITIALIZATION_STATE=\[\[\[(-?\d+\.\d+),(-?\d+\.\d+)', r.text)
+                    if match_js:
+                        lat_lng_match = (match_js.group(1), match_js.group(2))
+        
+        if lat_lng_match:
+            lat, lng = float(lat_lng_match[0]), float(lat_lng_match[1])
+            return jsonify({
+                "status": "success",
+                "latitude": lat,
+                "longitude": lng,
+                "resolved_url": final_url
+            })
+            
+        return jsonify({
+            "status": "error",
+            "message": "Could not parse geographic coordinates from URL",
+            "resolved_url": final_url
+        }), 422
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to resolve URL: {str(e)}"}), 500
+
+
+# --------------------------------------------------------------------------
+# Hospital Authentication & Resources Endpoints
+# --------------------------------------------------------------------------
+@app.route('/api/hospital/register', methods=['POST'])
+def register_hospital():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    name = data.get("name", "").strip()
+    phone = data.get("phone", "").strip()
+    address = data.get("address", "").strip()
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+
+    if not email or not password or not name or not phone or not address or latitude is None or longitude is None:
+        return jsonify({"status": "error", "message": "All fields are required (including address and lat/lng)"}), 400
+
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid latitude/longitude values"}), 400
+
+    hospitals = load_hospitals()
+    if email in hospitals:
+        return jsonify({"status": "error", "message": "Hospital email is already registered"}), 400
+
+    hashed_pw = hashlib.sha256(password.encode()).hexdigest()
+    hosp_id = f"HOSP-{int(time.time() * 1000) % 100000:05d}"
+    hospitals[email] = {
+        "id": hosp_id,
+        "email": email,
+        "password": hashed_pw,
+        "name": name,
+        "phone": phone,
+        "address": address,
+        "latitude": latitude,
+        "longitude": longitude,
+        "ambulances": 0,
+        "care_units": 0,
+        "first_aid_kits": 0,
+        "oxygen_cylinders": 0
+    }
+    save_hospitals(hospitals)
+
+    session["hospital"] = {
+        "id": hosp_id,
+        "email": email,
+        "name": name,
+        "phone": phone,
+        "address": address,
+        "latitude": latitude,
+        "longitude": longitude
+    }
+    session.permanent = True
+
+    return jsonify({
+        "status": "success",
+        "message": "Hospital registered successfully",
+        "hospital": session["hospital"]
+    }), 201
+
+
+@app.route('/api/hospital/login', methods=['POST'])
+def login_hospital():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    if not email or not password:
+        return jsonify({"status": "error", "message": "Email and password are required"}), 400
+
+    hospitals = load_hospitals()
+    if email not in hospitals:
+        return jsonify({"status": "error", "message": "Invalid credentials"}), 401
+
+    hashed_pw = hashlib.sha256(password.encode()).hexdigest()
+    h = hospitals[email]
+    if h["password"] != hashed_pw:
+        return jsonify({"status": "error", "message": "Invalid credentials"}), 401
+
+    session["hospital"] = {
+        "id": h["id"],
+        "email": email,
+        "name": h["name"],
+        "phone": h["phone"],
+        "address": h["address"],
+        "latitude": h["latitude"],
+        "longitude": h["longitude"]
+    }
+    session.permanent = True
+
+    return jsonify({
+        "status": "success",
+        "message": "Login successful",
+        "hospital": session["hospital"]
+    })
+
+
+@app.route('/api/hospital/logout', methods=['POST'])
+def logout_hospital():
+    session.pop("hospital", None)
+    return jsonify({"status": "success", "message": "Logged out successfully"})
+
+
+@app.route('/api/hospital/session', methods=['GET'])
+def get_hospital_session():
+    if "hospital" in session:
+        hospitals = load_hospitals()
+        h_email = session["hospital"]["email"]
+        if h_email in hospitals:
+            h = hospitals[h_email]
+            return jsonify({
+                "status": "success",
+                "hospital": {
+                    "id": h["id"],
+                    "email": h["email"],
+                    "name": h["name"],
+                    "phone": h["phone"],
+                    "address": h["address"],
+                    "latitude": h["latitude"],
+                    "longitude": h["longitude"],
+                    "ambulances": h.get("ambulances", 0),
+                    "care_units": h.get("care_units", 0),
+                    "first_aid_kits": h.get("first_aid_kits", 0),
+                    "oxygen_cylinders": h.get("oxygen_cylinders", 0)
+                }
+            })
+    return jsonify({"status": "success", "hospital": None})
+
+
+@app.route('/api/hospital/resources', methods=['POST'])
+def update_hospital_resources():
+    if "hospital" not in session:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+
+    data = request.get_json() or {}
+    h_email = session["hospital"]["email"]
+    hospitals = load_hospitals()
+
+    if h_email not in hospitals:
+        return jsonify({"status": "error", "message": "Hospital profile not found"}), 404
+
+    h = hospitals[h_email]
+    try:
+        h["ambulances"] = int(data.get("ambulances", h.get("ambulances", 0)))
+        h["care_units"] = int(data.get("care_units", h.get("care_units", 0)))
+        h["first_aid_kits"] = int(data.get("first_aid_kits", h.get("first_aid_kits", 0)))
+        h["oxygen_cylinders"] = int(data.get("oxygen_cylinders", h.get("oxygen_cylinders", 0)))
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid resource numeric values"}), 400
+
+    save_hospitals(hospitals)
+    
+    # Broadcast resource update to all active command dashboard clients
+    broadcast_event("hospital_resources_updated", {
+        "hospital_id": h["id"],
+        "hospital_name": h["name"],
+        "ambulances": h["ambulances"],
+        "care_units": h["care_units"],
+        "first_aid_kits": h["first_aid_kits"],
+        "oxygen_cylinders": h["oxygen_cylinders"]
+    })
+
+    return jsonify({
+        "status": "success",
+        "message": "Resources updated successfully",
+        "hospital": h
+    })
+
+
+# --------------------------------------------------------------------------
+# Bystander Authentication & Report Endpoints
+# --------------------------------------------------------------------------
+@app.route('/api/auth/register', methods=['POST'])
+def register_bystander():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    name = data.get("name", "").strip()
+    phone = data.get("phone", "").strip()
+
+    if not email or not password or not name or not phone:
+        return jsonify({"status": "error", "message": "All fields are required"}), 400
+
+    users = load_users()
+    if email in users:
+        return jsonify({"status": "error", "message": "Email is already registered"}), 400
+
+    hashed_pw = hashlib.sha256(password.encode()).hexdigest()
+    users[email] = {
+        "email": email,
+        "password": hashed_pw,
+        "name": name,
+        "phone": phone
+    }
+    save_users(users)
+
+    # Set session
+    session["user"] = {
+        "email": email,
+        "name": name,
+        "phone": phone
+    }
+    session.permanent = True
+
+    return jsonify({
+        "status": "success",
+        "message": "Registration successful",
+        "user": session["user"]
+    }), 201
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login_bystander():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    if not email or not password:
+        return jsonify({"status": "error", "message": "Email and password are required"}), 400
+
+    users = load_users()
+    if email not in users:
+        return jsonify({"status": "error", "message": "Invalid email or password"}), 401
+
+    hashed_pw = hashlib.sha256(password.encode()).hexdigest()
+    if users[email]["password"] != hashed_pw:
+        return jsonify({"status": "error", "message": "Invalid email or password"}), 401
+
+    # Set session
+    session["user"] = {
+        "email": email,
+        "name": users[email]["name"],
+        "phone": users[email]["phone"]
+    }
+    session.permanent = True
+
+    return jsonify({
+        "status": "success",
+        "message": "Login successful",
+        "user": session["user"]
+    })
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout_bystander():
+    session.pop("user", None)
+    return jsonify({"status": "success", "message": "Logged out successfully"})
+
+
+@app.route('/api/auth/session', methods=['GET'])
+def get_session():
+    if "user" in session:
+        return jsonify({"status": "success", "user": session["user"]})
+    return jsonify({"status": "success", "user": None})
+
+
+@app.route('/api/bystander/my-reports', methods=['GET'])
+def get_my_reports():
+    if "user" not in session:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+
+    user_email = session["user"]["email"]
+    user_reports = [
+        a for a in alerts_db 
+        if a.get("reporter_type") == "bystander" and a.get("reporter", {}).get("email") == user_email
+    ]
+    return jsonify({
+        "status": "success",
+        "reports": user_reports
+    })
+
+
+@app.route('/api/healthcare-centers', methods=['GET'])
+def get_healthcare_centers():
+    lat_str = request.args.get("latitude")
+    lng_str = request.args.get("longitude")
+    
+    centers = [dict(c) for c in HEALTHCARE_CENTERS]
+    hospitals = load_hospitals()
+    for h_email, h in hospitals.items():
+        centers.append({
+            "id": h.get("id"),
+            "name": h.get("name"),
+            "latitude": h.get("latitude"),
+            "longitude": h.get("longitude"),
+            "phone": h.get("phone"),
+            "address": h.get("address")
+        })
+    
+    if lat_str and lng_str:
+        try:
+            lat = float(lat_str)
+            lng = float(lng_str)
+            for c in centers:
+                c["distance"] = round(calculate_distance(lat, lng, c["latitude"], c["longitude"]), 2)
+            centers.sort(key=lambda x: x["distance"])
+        except ValueError:
+            pass
+            
+    return jsonify({
+        "status": "success",
+        "centers": centers
+    })
+
+
+@app.route('/api/bystander/report', methods=['POST'])
+def upload_bystander_report():
+    if "user" not in session:
+        return jsonify({"status": "error", "message": "Unauthorized. Please register or log in first."}), 401
+
+    data = request.get_json() or {}
+    image_data = data.get("image_data", "")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+    location_name = data.get("location_name", "").strip()
+
+    if not image_data:
+        return jsonify({"status": "error", "message": "No image data provided"}), 400
+    if latitude is None or longitude is None:
+        return jsonify({"status": "error", "message": "Location coordinates are required"}), 400
+
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid coordinates"}), 400
+
+    try:
+        # Decode base64 image
+        raw_b64 = image_data.split(",")[1] if "," in image_data else image_data
+        img_bytes = base64.b64decode(raw_b64)
+        np_arr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+        if frame is None:
+            return jsonify({"status": "error", "message": "Could not decode image"}), 400
+
+        # Run inference using trained YOLO model
+        ai_detector.model_cfg["confidence_threshold"] = 0.40
+        raw_detections = ai_detector.detect(frame)
+
+        # Process detections (accident class, min confidence 0.40)
+        frame_h, frame_w = frame.shape[:2]
+        frame_area = frame_h * frame_w
+
+        valid_detections = []
+        for d in raw_detections:
+            x1, y1, x2, y2 = d["bbox"]
+            class_name = d.get("class_name", "").lower()
+            confidence = d["confidence"]
+
+            if "accident" in class_name and confidence >= 0.40:
+                valid_detections.append(d)
+
+        accident_detected = len(valid_detections) > 0
+        max_conf = max([d["confidence"] for d in valid_detections]) if accident_detected else 0.0
+
+        # Draw bounding boxes on frame
+        annotated_image_data = image_data
+        if accident_detected:
+            for d in valid_detections:
+                x1, y1, x2, y2 = d["bbox"]
+                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 3)
+                label = f"Accident: {d['confidence']:.2%}"
+                cv2.putText(frame, label, (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            
+            _, buffer = cv2.imencode('.jpg', frame)
+            annotated_b64 = base64.b64encode(buffer).decode('utf-8')
+            annotated_image_data = f"data:image/jpeg;base64,{annotated_b64}"
+
+        # Find nearby healthcare centers (including dynamic registered ones)
+        all_centers = [dict(c) for c in HEALTHCARE_CENTERS]
+        hospitals = load_hospitals()
+        for h_email, h in hospitals.items():
+            all_centers.append({
+                "id": h.get("id"),
+                "name": h.get("name"),
+                "latitude": h.get("latitude"),
+                "longitude": h.get("longitude"),
+                "phone": h.get("phone"),
+                "address": h.get("address")
+            })
+
+        centers_with_dist = []
+        for center in all_centers:
+            dist = calculate_distance(latitude, longitude, center["latitude"], center["longitude"])
+            centers_with_dist.append({
+                **center,
+                "distance": round(dist, 2)
+            })
+        centers_with_dist.sort(key=lambda x: x["distance"])
+        closest_center = centers_with_dist[0]
+
+        # Generate alert payload
+        alert_id = f"ALT-{int(time.time() * 1000) % 1000000:06d}"
+        loc_name = location_name if location_name else f"Coordinates: {latitude:.4f}, {longitude:.4f}"
+        
+        reporter_info = {
+            "name": session["user"]["name"],
+            "phone": session["user"]["phone"],
+            "email": session["user"]["email"]
+        }
+
+        alert_payload = {
+            "id": alert_id,
+            "camera_id": "Bystander Portal Mobile App",
+            "location_name": loc_name,
+            "latitude": latitude,
+            "longitude": longitude,
+            "confidence": round(float(max_conf), 3) if accident_detected else 0.0,
+            "detection_count": len(valid_detections),
+            "severity": "CRITICAL" if max_conf >= 0.70 else "HIGH",
+            "timestamp": datetime.now().isoformat(),
+            "formatted_time": datetime.now().strftime("%I:%M:%S %p"),
+            "image_data": annotated_image_data,
+            "status": "PENDING",
+            "assigned_ambulance": None,
+            "dispatched_at": None,
+            "eta_mins": None,
+            "reporter": reporter_info,
+            "reporter_type": "bystander",
+            "assigned_hospital": closest_center["name"],
+            "assigned_hospital_phone": closest_center["phone"],
+            "distance_to_hospital": closest_center["distance"],
+            "gmaps_link": data.get("gmaps_link", "").strip() or f"https://www.google.com/maps/place/{latitude},{longitude}"
+        }
+
+        alerts_db.insert(0, alert_payload)
+        broadcast_event("new_alert", alert_payload)
+
+        return jsonify({
+            "status": "success",
+            "accident_detected": accident_detected,
+            "alert": alert_payload,
+            "healthcare_centers": centers_with_dist
+        }), 201
+
+    except Exception as e:
+        print(f"[ERROR] Bystander report processing error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # --------------------------------------------------------------------------
@@ -146,12 +760,14 @@ def create_alert():
     
     alert_id = f"ALT-{int(time.time() * 1000) % 1000000:06d}"
     
+    lat = data.get("latitude", 12.9716)
+    lng = data.get("longitude", 77.5946)
     alert = {
         "id": alert_id,
         "camera_id": data.get("camera_id", "CAM-01"),
         "location_name": data.get("location_name", "MG Road Intersection, Zone 3"),
-        "latitude": data.get("latitude", 12.9716),
-        "longitude": data.get("longitude", 77.5946),
+        "latitude": lat,
+        "longitude": lng,
         "confidence": data.get("confidence", 0.85),
         "detection_count": data.get("detection_count", 1),
         "severity": data.get("severity", "HIGH"),
@@ -161,7 +777,8 @@ def create_alert():
         "status": "PENDING",  # PENDING, ACCEPTED, DISPATCHED, COMPLETED
         "assigned_ambulance": None,
         "dispatched_at": None,
-        "eta_mins": None
+        "eta_mins": None,
+        "gmaps_link": data.get("gmaps_link", "").strip() or f"https://www.google.com/maps/place/{lat},{lng}"
     }
     
     alerts_db.insert(0, alert)
@@ -295,12 +912,14 @@ def detect_frame():
                 detect_frame.last_alert_time = current_time
 
                 alert_id = f"ALT-{int(time.time() * 1000) % 1000000:06d}"
+                lat = data.get("latitude", 12.9716)
+                lng = data.get("longitude", 77.5946)
                 alert_payload = {
                     "id": alert_id,
                     "camera_id": data.get("camera_id", "CAM-WEBCAM (Live Browser Stream)"),
                     "location_name": data.get("location_name", "MG Road Intersection, Zone 3"),
-                    "latitude": data.get("latitude", 12.9716),
-                    "longitude": data.get("longitude", 77.5946),
+                    "latitude": lat,
+                    "longitude": lng,
                     "confidence": round(float(max_conf), 3),
                     "detection_count": len(valid_detections),
                     "severity": "CRITICAL" if max_conf >= 0.75 else "HIGH",
@@ -310,7 +929,8 @@ def detect_frame():
                     "status": "PENDING",
                     "assigned_ambulance": None,
                     "dispatched_at": None,
-                    "eta_mins": None
+                    "eta_mins": None,
+                    "gmaps_link": data.get("gmaps_link", "").strip() or f"https://www.google.com/maps/place/{lat},{lng}"
                 }
 
                 alerts_db.insert(0, alert_payload)
@@ -341,8 +961,11 @@ def accept_alert(alert_id):
     if not alert:
         return jsonify({"status": "error", "message": "Alert not found"}), 404
         
-    # Find ambulance
-    ambulance = next((amb for amb in ambulances_db if amb["id"] == ambulance_id), ambulances_db[0])
+    # Find ambulance in dynamic list
+    all_ambulances = get_all_ambulances_list()
+    ambulance = next((amb for amb in all_ambulances if amb["id"] == ambulance_id), None)
+    if not ambulance:
+        ambulance = next((amb for amb in ambulances_db if amb["id"] == ambulance_id), ambulances_db[0])
     
     # Update state
     alert["status"] = "DISPATCHED"
@@ -350,9 +973,11 @@ def accept_alert(alert_id):
     alert["dispatched_at"] = datetime.now().strftime("%I:%M:%S %p")
     alert["eta_mins"] = ambulance.get("eta_mins", 6)
     
-    # Update ambulance status
-    ambulance["status"] = "ON_MISSION"
-    
+    # Update status in hardcoded db if present
+    for amb in ambulances_db:
+        if amb["id"] == ambulance_id:
+            amb["status"] = "ON_MISSION"
+            
     # Broadcast update to UI
     broadcast_event("alert_updated", alert)
     
@@ -365,12 +990,40 @@ def accept_alert(alert_id):
     })
 
 
+def get_all_ambulances_list():
+    all_ambulances = list(ambulances_db)
+    hospitals = load_hospitals()
+    for h_email, h in hospitals.items():
+        h_name = h.get("name")
+        num_amb = int(h.get("ambulances", 0))
+        for i in range(1, num_amb + 1):
+            amb_id = f"AMB-{h.get('id', 'HOSP')}-{i}"
+            
+            status = "AVAILABLE"
+            for alert in alerts_db:
+                if alert.get("assigned_ambulance") and alert["assigned_ambulance"].get("id") == amb_id:
+                    if alert.get("status") == "DISPATCHED":
+                        status = "ON_MISSION"
+                        
+            all_ambulances.append({
+                "id": amb_id,
+                "name": f"{h_name} Response Unit {i}",
+                "driver": f"Paramedic Unit {i}",
+                "phone": h.get("phone", "+91 99999 99999"),
+                "status": status,
+                "type": "Advanced ICU Unit" if i == 1 else "Standard Life Support",
+                "hospital": h_name,
+                "eta_mins": 5 + i * 2
+            })
+    return all_ambulances
+
+
 @app.route('/api/ambulances', methods=['GET'])
 def get_ambulances():
     """List available ambulance units"""
     return jsonify({
         "status": "success",
-        "ambulances": ambulances_db
+        "ambulances": get_all_ambulances_list()
     })
 
 

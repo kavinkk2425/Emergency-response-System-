@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hospital Emergency Command Portal — Accicare</title>
+  <!-- Google Fonts -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap">
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- Core Design Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body {
+      background-attachment: fixed;
+      font-family: 'Outfit', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      padding: 20px 16px 80px 16px;
+      box-sizing: border-box;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+      margin-bottom: 20px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .glassmorphism {
+      background: rgba(22, 27, 39, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* Registration Layout Grid */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 768px) {
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .form-input {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      padding: 12px;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .form-input:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 0 3px rgba(0, 242, 254, 0.15);
+    }
+
+    .map-container {
+      height: 220px;
+      width: 100%;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-top: 10px;
+      position: relative;
+    }
+    #map {
+      width: 100%; height: 100%;
+      z-index: 1;
+    }
+
+    .leaflet-layer,
+    .leaflet-control-zoom-in,
+    .leaflet-control-zoom-out,
+    .leaflet-control-attribution {
+      filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+    }
+
+    .auth-toggle {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 16px;
+    }
+    .auth-toggle a {
+      color: var(--green);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .auth-toggle a:hover {
+      text-decoration: underline;
+    }
+
+    /* Admin Resource Grid */
+    .resource-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-top: 10px;
+    }
+    @media (max-width: 600px) {
+      .resource-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .resource-card {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+      position: relative;
+    }
+    .resource-val {
+      font-size: 1.8rem;
+      font-weight: 800;
+      font-family: var(--mono);
+      color: #00f2fe;
+      margin-bottom: 4px;
+    }
+    .resource-lbl {
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Alert Items */
+    .dashboard-layout {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 20px;
+    }
+    @media (max-width: 800px) {
+      .dashboard-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .alert-card-action {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+
+    /* Dispatch Controls */
+    .dispatch-select-wrap {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #00f2fe;
+      color: #060814;
+      padding: 12px 24px;
+      border-radius: 30px;
+      box-shadow: 0 8px 24px rgba(0, 242, 254, 0.3);
+      font-weight: 700;
+      font-size: 0.9rem;
+      z-index: 10000;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .toast.active {
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast.error-toast {
+      background: #ff3b30;
+      color: #fff;
+      box-shadow: 0 8px 24px rgba(255, 59, 48, 0.3);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Background Orbs -->
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast">Info Message</div>
+
+  <div class="container">
+
+    <!-- Header -->
+    <header class="app-header" style="border-radius: var(--radius-lg); margin-bottom: 20px; background: var(--bg-card); padding: 0 24px;">
+      <div class="brand">
+        <div class="brand-icon">🏥</div>
+        <div>
+          <h1>Hospital Emergency Portal</h1>
+          <p>Register Center, Manage Fleet & Dispatch Units</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <a href="/" class="btn btn-muted" style="padding: 6px 12px; font-size: 0.78rem;">🛡️ Console</a>
+        <a href="/bystander.html" class="btn btn-muted" style="padding: 6px 12px; font-size: 0.78rem;">🚨 Bystander Portal</a>
+      </div>
+    </header>
+
+    <!-- AUTHENTICATION (Register & Login) -->
+    <div id="authPanel" class="card glassmorphism">
+      
+      <!-- REGISTER -->
+      <div id="registerFormContainer">
+        <div class="auth-title-container" style="text-align: center; margin-bottom: 20px;">
+          <h2 style="font-size: 1.5rem; font-weight: 800; background: linear-gradient(135deg, #fff, #00f2fe); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Register Organisation / Hospital</h2>
+          <p style="color: var(--muted); font-size: 0.82rem;">Create your profile to receive emergency route broadcasts</p>
+        </div>
+        <form id="registerForm" onsubmit="handleRegister(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="regName">Hospital / Center Name</label>
+              <input type="text" id="regName" class="form-input" placeholder="e.g. Metro Trauma Center" required>
+            </div>
+            <div class="form-group">
+              <label for="regPhone">Helpline Phone Number</label>
+              <input type="tel" id="regPhone" class="form-input" placeholder="e.g. +91 80 2520 3333" required>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="regEmail">Official Email</label>
+              <input type="email" id="regEmail" class="form-input" placeholder="e.g. contact@metrohospital.com" required>
+            </div>
+            <div class="form-group">
+              <label for="regPassword">Access Password</label>
+              <input type="password" id="regPassword" class="form-input" placeholder="••••••••" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="regAddress">Full Street Address</label>
+            <input type="text" id="regAddress" class="form-input" placeholder="e.g. 100 Feet Rd, Indiranagar, Bengaluru" required>
+          </div>
+
+          <div class="form-group" style="margin-top: 8px;">
+            <label>📍 Geographic Coordinates (Click Map to Drop Marker)</label>
+            <div class="map-container">
+              <div id="map"></div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 8px;">
+              <input type="text" id="regLat" class="form-input" placeholder="Latitude" style="flex: 1; padding: 8px;" readonly required>
+              <input type="text" id="regLng" class="form-input" placeholder="Longitude" style="flex: 1; padding: 8px;" readonly required>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-dispatch" style="width: 100%; justify-content: center; margin-top: 14px;">🏥 Register Emergency Center</button>
+        </form>
+        <div class="auth-toggle">
+          Already registered? <a href="#" onclick="toggleAuthForms(false)">Sign In here</a>
+        </div>
+      </div>
+
+      <!-- LOGIN -->
+      <div id="loginFormContainer" style="display: none;">
+        <div class="auth-title-container" style="text-align: center; margin-bottom: 20px;">
+          <h2 style="font-size: 1.5rem; font-weight: 800; background: linear-gradient(135deg, #fff, #00f2fe); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Sign In to Hospital Portal</h2>
+          <p style="color: var(--muted); font-size: 0.82rem;">Access resource allocation and alert feeds</p>
+        </div>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+          <div class="form-group">
+            <label for="loginEmail">Email Address</label>
+            <input type="email" id="loginEmail" class="form-input" placeholder="contact@metrohospital.com" required autocomplete="email">
+          </div>
+          <div class="form-group">
+            <label for="loginPassword">Access Password</label>
+            <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn btn-dispatch" style="width: 100%; justify-content: center; margin-top: 10px;">🔑 Sign In</button>
+        </form>
+        <div class="auth-toggle">
+          Need registration? <a href="#" onclick="toggleAuthForms(true)">Register Center</a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MAIN ADMIN DASHBOARD PANEL -->
+    <div id="adminPanel" style="display: none;">
+      
+      <!-- Stats / Profile Bar -->
+      <div class="card glassmorphism" style="padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+        <div>
+          <h2 id="hospNameText" style="font-size: 1.3rem; font-weight: 800; color: #fff;">Metro Emergency Center</h2>
+          <p id="hospContactText" style="font-size: 0.8rem; color: var(--muted);">Indiranagar, Bengaluru · Contact: +91 80 2520 3333</p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button onclick="handleLogout()" class="btn btn-muted" style="padding: 8px 16px; font-size: 0.8rem;">🚪 Sign Out</button>
+        </div>
+      </div>
+
+      <!-- Resource Management Panel -->
+      <div class="card glassmorphism">
+        <h3 style="font-size: 1.05rem; font-weight: 800; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+          <span>📦 Emergency Resource Inventory Settings</span>
+        </h3>
+        
+        <form id="resourcesForm" onsubmit="handleSaveResources(event)">
+          <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="form-group">
+              <label for="resAmbulances">Ambulance Units</label>
+              <input type="number" id="resAmbulances" class="form-input" min="0" required placeholder="0">
+            </div>
+            <div class="form-group">
+              <label for="resCareUnits">ICU/Care Beds</label>
+              <input type="number" id="resCareUnits" class="form-input" min="0" required placeholder="0">
+            </div>
+            <div class="form-group">
+              <label for="resFirstAid">First Aid Kits</label>
+              <input type="number" id="resFirstAid" class="form-input" min="0" required placeholder="0">
+            </div>
+            <div class="form-group">
+              <label for="resOxygen">Oxygen Cylinders</label>
+              <input type="number" id="resOxygen" class="form-input" min="0" required placeholder="0">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-dispatch" style="margin-top: 10px; width: 100%; justify-content: center; font-size: 0.88rem; padding: 10px 20px;">
+            💾 Save Inventory Counts
+          </button>
+        </form>
+
+        <!-- Current Inventory Visuals -->
+        <div class="resource-grid">
+          <div class="resource-card">
+            <div class="resource-val" id="lblAmbulances">0</div>
+            <div class="resource-lbl">Ambulances</div>
+          </div>
+          <div class="resource-card">
+            <div class="resource-val" id="lblCareUnits">0</div>
+            <div class="resource-lbl">ICU Care Beds</div>
+          </div>
+          <div class="resource-card">
+            <div class="resource-val" id="lblFirstAid">0</div>
+            <div class="resource-lbl">First Aid Kits</div>
+          </div>
+          <div class="resource-card">
+            <div class="resource-val" id="lblOxygen">0</div>
+            <div class="resource-lbl">O₂ Cylinders</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Dashboard Feed Grid -->
+      <div class="dashboard-layout">
+        
+        <!-- Alerts Feed Assigned to this Hospital -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2>🚨 Active Emergencies Routed to Us</h2>
+            <span class="badge-count" id="hospAlertCount">0 alerts</span>
+          </div>
+
+          <div class="alerts-feed" id="hospAlertsFeed">
+            <div class="empty-state">
+              <div class="empty-icon">🛡️</div>
+              <p>No active collision alerts are currently routed to this center.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar Dispatch Fleet info -->
+        <div class="side-panel">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>🚑 Our Ambulance Fleet</h2>
+            </div>
+            <div class="fleet-list" id="hospFleetList">
+              <div class="empty-state" style="padding: 20px 10px;">
+                <p style="font-size: 0.8rem;">Add ambulances in resource settings to populate fleet.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Leaflet Map JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <script>
+    let map = null;
+    let marker = null;
+    let currentHospital = null;
+    let allAlerts = [];
+    let allAmbulances = [];
+
+    // Initialize Toast helper
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      if (isError) {
+        toast.classList.add('error-toast');
+      } else {
+        toast.classList.remove('error-toast');
+      }
+      toast.classList.add('active');
+      setTimeout(() => {
+        toast.classList.remove('active');
+      }, 4000);
+    }
+
+    // Toggle Forms
+    function toggleAuthForms(showRegister) {
+      document.getElementById('registerFormContainer').style.display = showRegister ? 'block' : 'none';
+      document.getElementById('loginFormContainer').style.display = showRegister ? 'none' : 'block';
+      if (showRegister) {
+        setTimeout(initRegistrationMap, 100);
+      }
+    }
+
+    // Initialize Leaflet map for Registration location picking
+    function initRegistrationMap() {
+      if (map) return;
+      
+      // Default to Bangalore Center
+      const defaultLat = 12.9716;
+      const defaultLng = 77.5946;
+
+      document.getElementById('regLat').value = defaultLat.toFixed(6);
+      document.getElementById('regLng').value = defaultLng.toFixed(6);
+
+      map = L.map('map', {
+        zoomControl: true
+      }).setView([defaultLat, defaultLng], 12);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+
+      // Create draggable marker
+      marker = L.marker([defaultLat, defaultLng], {
+        draggable: true
+      }).addTo(map);
+
+      // Drag listener
+      marker.on('dragend', function (e) {
+        const latLng = marker.getLatLng();
+        document.getElementById('regLat').value = latLng.lat.toFixed(6);
+        document.getElementById('regLng').value = latLng.lng.toFixed(6);
+      });
+
+      // Map click listener
+      map.on('click', function (e) {
+        marker.setLatLng(e.latlng);
+        document.getElementById('regLat').value = e.latlng.lat.toFixed(6);
+        document.getElementById('regLng').value = e.latlng.lng.toFixed(6);
+      });
+    }
+
+    // Check existing session
+    async function checkSession() {
+      try {
+        const res = await fetch('/api/hospital/session');
+        const data = await res.json();
+        if (data.status === 'success' && data.hospital) {
+          currentHospital = data.hospital;
+          showDashboard();
+        } else {
+          showAuth();
+        }
+      } catch (e) {
+        showAuth();
+      }
+    }
+
+    function showAuth() {
+      currentHospital = null;
+      document.getElementById('authPanel').style.display = 'block';
+      document.getElementById('adminPanel').style.display = 'none';
+      setTimeout(initRegistrationMap, 100);
+    }
+
+    function showDashboard() {
+      document.getElementById('authPanel').style.display = 'none';
+      document.getElementById('adminPanel').style.display = 'block';
+
+      document.getElementById('hospNameText').textContent = currentHospital.name;
+      document.getElementById('hospContactText').textContent = `${currentHospital.address} · Helpline: ${currentHospital.phone}`;
+
+      // Populate resource form
+      document.getElementById('resAmbulances').value = currentHospital.ambulances || 0;
+      document.getElementById('resCareUnits').value = currentHospital.care_units || 0;
+      document.getElementById('resFirstAid').value = currentHospital.first_aid_kits || 0;
+      document.getElementById('resOxygen').value = currentHospital.oxygen_cylinders || 0;
+
+      // Update inventory UI labels
+      updateInventoryLabels();
+
+      // Start feeds
+      fetchAlerts();
+      fetchAmbulances();
+      initSSE();
+    }
+
+    function updateInventoryLabels() {
+      document.getElementById('lblAmbulances').textContent = currentHospital.ambulances || 0;
+      document.getElementById('lblCareUnits').textContent = currentHospital.care_units || 0;
+      document.getElementById('lblFirstAid').textContent = currentHospital.first_aid_kits || 0;
+      document.getElementById('lblOxygen').textContent = currentHospital.oxygen_cylinders || 0;
+    }
+
+    // API Handlers
+    async function handleRegister(event) {
+      event.preventDefault();
+      const email = document.getElementById('regEmail').value;
+      const password = document.getElementById('regPassword').value;
+      const name = document.getElementById('regName').value;
+      const phone = document.getElementById('regPhone').value;
+      const address = document.getElementById('regAddress').value;
+      const latitude = document.getElementById('regLat').value;
+      const longitude = document.getElementById('regLng').value;
+
+      try {
+        const res = await fetch('/api/hospital/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, name, phone, address, latitude, longitude })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentHospital = data.hospital;
+          showToast('Registration successful! Welcome.', false);
+          showDashboard();
+        } else {
+          showToast(data.message || 'Registration failed', true);
+        }
+      } catch (e) {
+        showToast('Connection failed. Please retry.', true);
+      }
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+
+      try {
+        const res = await fetch('/api/hospital/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentHospital = data.hospital;
+          showToast('Signed in successfully!', false);
+          checkSession();
+        } else {
+          showToast(data.message || 'Invalid credentials', true);
+        }
+      } catch (e) {
+        showToast('Connection failed. Please retry.', true);
+      }
+    }
+
+    async function handleLogout() {
+      try {
+        await fetch('/api/hospital/logout', { method: 'POST' });
+        showToast('Signed out successfully', false);
+        showAuth();
+      } catch (e) {
+        showAuth();
+      }
+    }
+
+    async function handleSaveResources(event) {
+      event.preventDefault();
+      const ambulances = document.getElementById('resAmbulances').value;
+      const care_units = document.getElementById('resCareUnits').value;
+      const first_aid_kits = document.getElementById('resFirstAid').value;
+      const oxygen_cylinders = document.getElementById('resOxygen').value;
+
+      try {
+        const res = await fetch('/api/hospital/resources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ambulances, care_units, first_aid_kits, oxygen_cylinders })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          currentHospital = data.hospital;
+          updateInventoryLabels();
+          showToast('Inventory logs saved & broadcasted!', false);
+          fetchAmbulances();
+        } else {
+          showToast(data.message || 'Failed to save resources', true);
+        }
+      } catch (e) {
+        showToast('Server update failed.', true);
+      }
+    }
+
+    // Alerts Feed and Routing lookup
+    async function fetchAlerts() {
+      try {
+        const res = await fetch('/api/alerts');
+        const data = await res.json();
+        if (data.status === 'success') {
+          allAlerts = data.alerts;
+          renderAlerts();
+        }
+      } catch (e) {
+        console.error("Failed to load alerts:", e);
+      }
+    }
+
+    async function fetchAmbulances() {
+      try {
+        const res = await fetch('/api/ambulances');
+        const data = await res.json();
+        if (data.status === 'success') {
+          allAmbulances = data.ambulances;
+          renderFleet();
+          renderAlerts(); // Re-render alert select options
+        }
+      } catch (e) {
+        console.error("Failed to load fleet:", e);
+      }
+    }
+
+    function renderAlerts() {
+      const feed = document.getElementById('hospAlertsFeed');
+      const filtered = allAlerts.filter(a => a.assigned_hospital === currentHospital.name);
+      
+      document.getElementById('hospAlertCount').textContent = `${filtered.length} alerts`;
+
+      if (filtered.length === 0) {
+        feed.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🛡️</div>
+            <p>No active accident alerts are currently routed to this center.</p>
+          </div>`;
+        return;
+      }
+
+      // Filter ambulances matching this hospital
+      const ourAmbulances = allAmbulances.filter(amb => amb.hospital === currentHospital.name);
+
+      feed.innerHTML = filtered.map(a => {
+        const isPending = a.status === 'PENDING';
+        const color = a.severity === 'CRITICAL' ? 'red' : 'amber';
+        const isBystander = a.reporter_type === 'bystander';
+
+        let actionHtml = '';
+        if (isPending) {
+          if (ourAmbulances.length === 0) {
+            actionHtml = `
+              <div class="alert-card-action">
+                <p style="font-size:0.75rem; color:#ff3b30; font-weight:700;">⚠️ No available ambulances in your settings. Please add units above to dispatch.</p>
+              </div>`;
+          } else {
+            const availableAmbs = ourAmbulances.filter(amb => amb.status === 'AVAILABLE');
+            if (availableAmbs.length === 0) {
+              actionHtml = `
+                <div class="alert-card-action">
+                  <p style="font-size:0.75rem; color:#ff3b30; font-weight:700;">🚨 All hospital ambulances are currently ON_MISSION.</p>
+                </div>`;
+            } else {
+              actionHtml = `
+                <div class="alert-card-action">
+                  <label class="field-label" style="font-size: 0.65rem; font-weight: bold; color: var(--muted);">Assign Ambulance:</label>
+                  <div class="dispatch-select-wrap">
+                    <select class="form-input" id="dispatch-select-${a.id}" style="padding: 6px; font-size: 0.8rem; flex: 1;">
+                      ${availableAmbs.map(amb => `<option value="${amb.id}">${amb.name} (${amb.type})</option>`).join('')}
+                    </select>
+                    <button class="btn btn-dispatch" style="padding: 6px 12px; font-size: 0.8rem;" onclick="dispatchAmbulance('${a.id}')">🚑 Dispatch</button>
+                  </div>
+                </div>`;
+            }
+          }
+        } else {
+          actionHtml = `
+            <div style="margin-top: 8px; font-size: 0.78rem; color: #38ef7d; font-weight: 700;">
+              ✅ Dispatched: ${a.assigned_ambulance ? a.assigned_ambulance.name : 'Ambulance'} · ETA ${a.eta_mins || '?'} mins
+            </div>`;
+        }
+
+        return `
+          <div class="alert-card ${isPending ? 'pending' : 'done'}" style="margin-bottom:12px;">
+            <img class="alert-thumb" src="${a.image_data || 'placeholder.jpg'}" alt="Snapshot">
+            <div class="alert-card-body">
+              <div class="alert-meta">
+                <span class="sev-badge ${color}">${a.severity || 'HIGH'}</span>
+                <span class="alert-time">${a.formatted_time || 'Just now'} &nbsp;•&nbsp; #${a.id}</span>
+              </div>
+              <div class="alert-location">
+                📍 ${a.location_name}
+                ${a.gmaps_link 
+                  ? `<a href="${a.gmaps_link}" target="_blank" class="gmaps-pill" style="display: inline-flex; align-items: center; gap: 4px; background: rgba(57, 255, 20, 0.15); color: #39FF14; border: 1px dashed #39FF14; border-radius: 4px; padding: 2px 6px; font-size: 0.68rem; text-decoration: none; margin-left: 8px; font-weight: 600;">🗺️ Google Maps</a>`
+                  : ''
+                }
+              </div>
+              <div class="alert-sub" style="margin-bottom:0;">
+                ${isBystander 
+                  ? `👤 Reporter: <strong>${a.reporter.name} (${a.reporter.phone})</strong>` 
+                  : `📹 System Camera: <strong>${a.camera_id}</strong>`
+                }
+                <br>📏 Distance to us: <strong>${a.distance_to_hospital || '0.0'} km</strong>
+              </div>
+              ${actionHtml}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function renderFleet() {
+      const list = document.getElementById('hospFleetList');
+      const ourAmbulances = allAmbulances.filter(amb => amb.hospital === currentHospital.name);
+
+      if (ourAmbulances.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state" style="padding: 20px 10px;">
+            <p style="font-size: 0.8rem; color: var(--muted);">No ambulances configured.</p>
+          </div>`;
+        return;
+      }
+
+      list.innerHTML = ourAmbulances.map(amb => {
+        const isAvail = amb.status === 'AVAILABLE';
+        return `
+          <div class="fleet-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <div class="fleet-info" style="display:flex; flex-direction:column; gap:2px;">
+              <strong style="font-size:0.8rem; color:#fff;">${amb.name}</strong>
+              <span style="font-size:0.68rem; color:var(--muted);">${amb.type}</span>
+            </div>
+            <span class="status-chip ${isAvail ? 'green' : 'red'}" style="font-size:0.62rem; padding:2px 6px;">${amb.status}</span>
+          </div>`;
+      }).join('');
+    }
+
+    async function dispatchAmbulance(alertId) {
+      const select = document.getElementById(`dispatch-select-${alertId}`);
+      if (!select) return;
+      const ambId = select.value;
+
+      try {
+        const res = await fetch(`/api/alerts/${alertId}/accept`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ambulance_id: ambId })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast('Ambulance dispatched successfully!', false);
+          fetchAlerts();
+          fetchAmbulances();
+        } else {
+          showToast(data.message || 'Dispatch failed', true);
+        }
+      } catch (e) {
+        showToast('Connection error during dispatch.', true);
+      }
+    }
+
+    // Real-Time SSE Updates
+    function initSSE() {
+      const sse = new EventSource('/api/events');
+      
+      sse.addEventListener('new_alert', function (e) {
+        const a = JSON.parse(e.data);
+        // Play notification sound
+        try {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-500.wav');
+          audio.volume = 0.5;
+          audio.play();
+        } catch (err) {}
+
+        // check if this belongs to our hospital before showing toast
+        if (a.assigned_hospital === currentHospital.name) {
+          showToast(`🚨 NEW EMERGENCY ASSIGNED TO US: ${a.location_name}!`, false);
+        }
+
+        allAlerts.unshift(a);
+        renderAlerts();
+      });
+
+      sse.addEventListener('alert_updated', function (e) {
+        const updated = JSON.parse(e.data);
+        const idx = allAlerts.findIndex(a => a.id === updated.id);
+        if (idx !== -1) {
+          allAlerts[idx] = updated;
+        }
+        renderAlerts();
+        fetchAmbulances();
+      });
+
+      sse.onerror = function () {
+        console.log("SSE link lost, retrying...");
+      };
+    }
+
+    // Start
+    window.onload = function () {
+      checkSession();
+    };
+  </script>
+</body>
+</html>

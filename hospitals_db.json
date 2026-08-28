@@ -1,0 +1,16 @@
+{
+    "kk24@gmail.com": {
+        "id": "HOSP-15640",
+        "email": "kk24@gmail.com",
+        "password": "5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5",
+        "name": "kk-hospital",
+        "phone": "9994614868",
+        "address": "erode",
+        "latitude": 12.9716,
+        "longitude": 77.5946,
+        "ambulances": 4,
+        "care_units": 5,
+        "first_aid_kits": 5,
+        "oxygen_cylinders": 5
+    }
+}

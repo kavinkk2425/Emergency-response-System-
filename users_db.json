@@ -1,0 +1,20 @@
+{
+    "kavinofficial12345@gmail.com": {
+        "email": "kavinofficial12345@gmail.com",
+        "password": "0ea5004168916e8459d39c2d9c81f2870967edd0eca63828e19f2358d059d5fe",
+        "name": "Kavin",
+        "phone": "9994614868"
+    },
+    "jane.bystander@gmail.com": {
+        "email": "jane.bystander@gmail.com",
+        "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+        "name": "Jane Bystander",
+        "phone": "+91 99887 76655"
+    },
+    "test_bystander@gmail.com": {
+        "email": "test_bystander@gmail.com",
+        "password": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+        "name": "Test Bystander",
+        "phone": "+91 99999 88888"
+    }
+}

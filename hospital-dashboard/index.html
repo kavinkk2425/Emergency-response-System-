@@ -4,9 +4,73 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hospital Emergency Command Console</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Tactical Dashboard Map styles */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 380px 1fr 320px !important;
+      height: calc(100vh - 112px);
+      box-sizing: border-box;
+      gap: 20px;
+      padding: 16px 24px;
+    }
+    
+    #consoleMap .leaflet-layer,
+    #consoleMap .leaflet-control-zoom-in,
+    #consoleMap .leaflet-control-zoom-out,
+    #consoleMap .leaflet-control-attribution {
+      filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+    }
+
+    .pulse-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      color: white;
+      font-size: 1.1rem;
+      font-weight: bold;
+      border: 2px solid rgba(255,255,255,0.4);
+      box-shadow: 0 0 12px rgba(0,0,0,0.6);
+    }
+    .red-pulse {
+      background: var(--red);
+      animation: map-red-glow 1.5s infinite alternate;
+    }
+    .blue-pulse {
+      background: var(--blue);
+      animation: map-blue-glow 1.5s infinite alternate;
+    }
+    @keyframes map-red-glow {
+      from { box-shadow: 0 0 4px #f85149; transform: scale(0.95); }
+      to { box-shadow: 0 0 16px #f85149; transform: scale(1.15); }
+    }
+    @keyframes map-blue-glow {
+      from { box-shadow: 0 0 4px #58a6ff; transform: scale(0.95); }
+      to { box-shadow: 0 0 16px #58a6ff; transform: scale(1.15); }
+    }
+    
+    .leaflet-popup-content-wrapper {
+      background: var(--bg-card) !important;
+      color: var(--text) !important;
+      border: 1px solid var(--border-strong) !important;
+      border-radius: 8px !important;
+    }
+    .leaflet-popup-tip {
+      background: var(--bg-card) !important;
+      border-left: 1px solid var(--border-strong) !important;
+      border-bottom: 1px solid var(--border-strong) !important;
+    }
+  </style>
 </head>
 <body>
+  <!-- Futuristic Glowing Orbs -->
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
 
   <header class="app-header">
     <div class="brand">
@@ -21,6 +85,7 @@
         <span class="pulse-dot"></span>
         <span id="statusText">LIVE</span>
       </div>
+      <a href="/bystander.html" target="_blank" class="btn btn-muted">👤 Bystander Portal</a>
       <button class="btn btn-muted" id="toggleAudioBtn">🔊 Sound ON</button>
       <button class="btn btn-danger" id="triggerDemoBtn">⚡ Test Alert</button>
     </div>
@@ -64,12 +129,20 @@
       </div>
     </section>
 
-    <!-- Right Column -->
+    <!-- Tactical Map Panel -->
+    <section class="panel" style="padding: 0; overflow: hidden; position: relative;">
+      <div class="panel-header" style="position: absolute; top: 12px; left: 12px; z-index: 1000; background: rgba(22,27,39,0.85); backdrop-filter: blur(8px); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); margin: 0; width: auto;">
+        <h2 style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; border: none; padding: 0;">🗺️ Emergency Dispatch Map</h2>
+      </div>
+      <div id="consoleMap" style="width: 100%; height: 100%; min-height: 400px; z-index: 10;"></div>
+    </section>
+
+    <!-- Right Column (Ambulance Fleet) -->
     <aside class="side-panel">
       <!-- Fleet -->
       <section class="panel">
         <div class="panel-header">
-          <h2>🚑 Ambulance Fleet</h2>
+          <h2>... Ambulance Fleet</h2>
           <span id="fleetStatusText" style="font-size:0.78rem;color:var(--muted);">4 Units</span>
         </div>
         <div class="fleet-list" id="fleetList"></div>
@@ -104,8 +177,12 @@
     </div>
   </div>
 
+  <!-- Leaflet Map JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
   <script>
     let alerts = [], ambulances = [], currentAlertId = null, audioEnabled = true, audioCtx = null;
+    let consoleMap = null, mapMarkers = {}, mapLines = {};
 
     function playAlert() {
       if (!audioEnabled) return;
@@ -130,6 +207,7 @@
     };
 
     async function init() {
+      initConsoleMap();
       await fetchAmbulances();
       await fetchAlerts();
       setupSSE();
@@ -139,7 +217,7 @@
       const r = await fetch('/api/alerts').catch(() => null);
       if (!r) return;
       const d = await r.json();
-      if (d.status === 'success') { alerts = d.alerts; renderAlerts(); updateStats(); }
+      if (d.status === 'success') { alerts = d.alerts; renderAlerts(); updateMapMarkers(); updateStats(); }
     }
 
     async function fetchAmbulances() {
@@ -159,13 +237,13 @@
         const a = JSON.parse(e.data);
         if (!alerts.some(x => x.id === a.id)) {
           alerts.unshift(a);
-          renderAlerts(); updateStats(); playAlert();
+          renderAlerts(); updateMapMarkers(); updateStats(); playAlert();
         }
       });
       sse.addEventListener('alert_updated', e => {
         const a = JSON.parse(e.data);
         const i = alerts.findIndex(x => x.id === a.id);
-        if (i !== -1) { alerts[i] = a; renderAlerts(); updateStats(); fetchAmbulances(); }
+        if (i !== -1) { alerts[i] = a; renderAlerts(); updateMapMarkers(); updateStats(); fetchAmbulances(); }
       });
       sse.onerror = () => { document.getElementById('statusText').textContent = 'RECONNECTING'; };
     }
@@ -192,6 +270,7 @@
         const card = document.createElement('div');
         card.className = `alert-card ${isPending ? 'pending' : 'done'}`;
         const fallback = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='80'><rect width='120' height='80' fill='%231a2035'/><text x='50%25' y='55%25' fill='%23ff3b30' text-anchor='middle' font-size='11'>No Snapshot</text></svg>`;
+        const isBystander = a.reporter_type === 'bystander';
         card.innerHTML = `
           <div class="alert-card-left">
             <img class="alert-thumb" src="${a.image_data || fallback}" alt="snapshot">
@@ -201,8 +280,24 @@
               <span class="sev-badge ${color}">${a.severity || 'HIGH'}</span>
               <span class="alert-time">${a.formatted_time || 'Just now'} &nbsp;•&nbsp; #${a.id}</span>
             </div>
-            <div class="alert-location">📍 ${a.location_name}</div>
-            <div class="alert-sub">📹 ${a.camera_id} &nbsp;|&nbsp; 🎯 Confidence: <strong>${Math.round(a.confidence * 100)}%</strong></div>
+            <div class="alert-location">
+              📍 ${a.location_name}
+              ${a.gmaps_link 
+                ? `<a href="${a.gmaps_link}" target="_blank" class="gmaps-pill" style="display: inline-flex; align-items: center; gap: 4px; background: rgba(57, 255, 20, 0.15); color: #39FF14; border: 1px dashed #39FF14; border-radius: 4px; padding: 2px 6px; font-size: 0.68rem; text-decoration: none; margin-left: 8px; font-weight: 600;">🗺️ Google Maps</a>`
+                : ''
+              }
+            </div>
+            <div class="alert-sub">
+              ${isBystander 
+                ? `👤 Bystander: <strong>${a.reporter.name} (${a.reporter.phone})</strong>` 
+                : `📹 Camera: <strong>${a.camera_id}</strong>`
+              }
+              &nbsp;|&nbsp; 🎯 Confidence: <strong>${Math.round(a.confidence * 100)}%</strong>
+              ${isBystander && a.assigned_hospital 
+                ? `<br>🏥 Nearest Hospital: <strong>${a.assigned_hospital} (${a.distance_to_hospital} km)</strong>` 
+                : ''
+              }
+            </div>
             <div class="alert-status-row">
               ${isPending
                 ? `<span class="status-chip red">🔴 Awaiting Response</span>
@@ -245,13 +340,31 @@
       currentAlertId = alertId;
       const a = alerts.find(x => x.id === alertId);
       if (!a) return;
+      const isBystander = a.reporter_type === 'bystander';
       document.getElementById('modalTitle').textContent = `🚨 Incident #${a.id}`;
       document.getElementById('modalIncidentInfo').innerHTML = `
         <div class="info-grid">
           <div><span class="info-label">Location</span><strong>${a.location_name}</strong></div>
-          <div><span class="info-label">Camera</span><strong>${a.camera_id}</strong></div>
+          <div><span class="info-label">Source</span><strong>${isBystander ? 'Bystander Report' : a.camera_id}</strong></div>
           <div><span class="info-label">Confidence</span><strong style="color:var(--green)">${Math.round(a.confidence*100)}%</strong></div>
           <div><span class="info-label">Severity</span><strong style="color:var(--red)">${a.severity}</strong></div>
+          ${isBystander ? `
+            <div style="grid-column: span 2; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px;">
+              <span class="info-label">Reported By</span>
+              <strong>${a.reporter.name} (${a.reporter.phone})</strong>
+            </div>
+            <div style="grid-column: span 2; border-top: 1px solid var(--border); padding-top: 4px;">
+              <span class="info-label">Nearest Healthcare Center (Routed)</span>
+              <strong>${a.assigned_hospital} (${a.distance_to_hospital} km away)</strong>
+            </div>
+          ` : ''}
+          ${a.gmaps_link ? `
+            <div style="grid-column: span 2; border-top: 1px dashed var(--border); padding-top: 8px; text-align: center; margin-top: 8px;">
+              <a href="${a.gmaps_link}" target="_blank" class="btn btn-dispatch-sm" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; font-size: 0.8rem; padding: 8px; background: rgba(57, 255, 20, 0.15); border-color: #39FF14; color: #39FF14; text-decoration: none; border-radius: 6px;">
+                🗺️ Open Live Location Link in Google Maps
+              </a>
+            </div>
+          ` : ''}
         </div>`;
       const fallback = `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='260'><rect width='600' height='260' fill='%231a2035'/><text x='50%25' y='50%25' fill='%23ff3b30' text-anchor='middle' font-size='18'>🚨 Accident Frame</text></svg>`;
       document.getElementById('modalSnapshot').src = a.image_data || fallback;
@@ -292,6 +405,104 @@
       const d = await res.json();
       if (d.status === 'success') playAlert();
     };
+
+    function initConsoleMap() {
+      if (consoleMap) return;
+      consoleMap = L.map('consoleMap', { zoomControl: false }).setView([12.9716, 77.5946], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(consoleMap);
+
+      L.control.zoom({ position: 'bottomright' }).addTo(consoleMap);
+    }
+
+    function updateMapMarkers() {
+      if (!consoleMap) return;
+
+      const activeIds = alerts.map(a => a.id);
+      Object.keys(mapMarkers).forEach(id => {
+        if (!activeIds.includes(id)) {
+          consoleMap.removeLayer(mapMarkers[id]);
+          delete mapMarkers[id];
+        }
+      });
+      Object.keys(mapLines).forEach(id => {
+        if (!activeIds.includes(id)) {
+          consoleMap.removeLayer(mapLines[id]);
+          delete mapLines[id];
+        }
+      });
+
+      alerts.forEach(a => {
+        const isPending = a.status === 'PENDING';
+        const color = severityColor(a.severity);
+        const markerHtml = isPending 
+          ? `<div class="pulse-marker red-pulse">🚨</div>` 
+          : `<div class="pulse-marker blue-pulse">🚑</div>`;
+
+        const icon = L.divIcon({
+          html: markerHtml,
+          className: 'map-div-icon',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+
+        if (mapMarkers[a.id]) {
+          mapMarkers[a.id].setLatLng([a.latitude, a.longitude]);
+          mapMarkers[a.id].setIcon(icon);
+        } else {
+          const marker = L.marker([a.latitude, a.longitude], { icon: icon })
+            .addTo(consoleMap)
+            .bindPopup(`
+              <div style="font-family: var(--font); color: #fff; padding: 4px; font-size: 0.8rem;">
+                <strong style="display:block; margin-bottom:4px;">Incident #${a.id}</strong>
+                <span style="display:block; color:var(--muted); margin-bottom:4px;">📍 ${a.location_name}</span>
+                <span style="display:block; margin-bottom:6px;">Severity: <strong style="color:var(--${color})">${a.severity}</strong></span>
+                <button class="btn btn-dispatch-sm" style="width:100%; justify-content:center; padding: 4px 8px; font-size: 0.72rem;" onclick="focusOnAlert('${a.id}')">View Details</button>
+              </div>
+            `);
+          mapMarkers[a.id] = marker;
+        }
+
+        if (a.status === 'DISPATCHED' && a.assigned_hospital) {
+          const hospitalName = a.assigned_hospital;
+          const hospitals = {
+            "City Central Trauma Center": [12.9716, 77.5946],
+            "Apex Emergency Care": [12.9912, 77.5734],
+            "St. Mary Medical Hospital": [12.9348, 77.6189],
+            "Metro Emergency Services": [12.9592, 77.6412],
+            "Bangalore East General Hospital": [12.9813, 77.6624]
+          };
+
+          const hospCoords = hospitals[hospitalName] || [12.9716, 77.5946];
+          
+          if (mapLines[a.id]) {
+            mapLines[a.id].setLatLngs([[a.latitude, a.longitude], hospCoords]);
+          } else {
+            const line = L.polyline([[a.latitude, a.longitude], hospCoords], {
+              color: '#58a6ff',
+              weight: 3,
+              opacity: 0.8,
+              dashArray: '5, 8'
+            }).addTo(consoleMap);
+            mapLines[a.id] = line;
+          }
+        }
+      });
+
+      const markerList = Object.values(mapMarkers);
+      if (markerList.length > 0) {
+        const group = new L.featureGroup(markerList);
+        consoleMap.fitBounds(group.getBounds().pad(0.3));
+      }
+    }
+
+    function focusOnAlert(id) {
+      const a = alerts.find(x => x.id === id);
+      if (!a) return;
+      openModal(a.id);
+    }
 
     window.addEventListener('DOMContentLoaded', init);
   </script>
